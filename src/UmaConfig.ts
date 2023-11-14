@@ -10,6 +10,8 @@ export default class UmaConfig {
     public readonly umaSigningPubKeyHex: string,
     public readonly umaSigningPrivKeyHex: string,
     public readonly clientBaseURL: string | undefined,
+    public readonly oskSigningKeyPassword: string | undefined,
+    public readonly remoteSigningMasterSeedHex: string | undefined,
   ) {}
 
   static fromEnvironment(): UmaConfig {
@@ -25,6 +27,8 @@ export default class UmaConfig {
       requireEnv("LIGHTSPARK_UMA_SIGNING_PUBKEY"),
       requireEnv("LIGHTSPARK_UMA_SIGNING_PRIVKEY"),
       process.env.LIGHTSPARK_EXAMPLE_BASE_URL,
+      process.env.LIGHTSPARK_UMA_OSK_NODE_SIGNING_KEY_PASSWORD,
+      process.env.LIGHTSPARK_UMA_REMOTE_SIGNING_NODE_MASTER_SEED,
     );
   }
 
@@ -42,6 +46,13 @@ export default class UmaConfig {
 
   umaSigningPrivKey(): Uint8Array {
     return Buffer.from(this.umaSigningPrivKeyHex, "hex");
+  }
+
+  remoteSigningMasterSeed(): Uint8Array | undefined {
+    return this.remoteSigningMasterSeedHex &&
+      this.remoteSigningMasterSeedHex.length > 0
+      ? Buffer.from(this.remoteSigningMasterSeedHex, "hex")
+      : undefined;
   }
 }
 

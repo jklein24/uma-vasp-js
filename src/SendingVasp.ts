@@ -1,6 +1,7 @@
 import { convertCurrencyAmount, hexToBytes } from "@lightsparkdev/core";
 import {
   CurrencyUnit,
+  getLightsparkNodeQuery,
   InvoiceData,
   LightsparkClient,
   OutgoingPayment,
@@ -14,7 +15,6 @@ import SendingVaspRequestCache, {
   SendingVaspPayReqData,
 } from "./SendingVaspRequestCache.js";
 import UmaConfig from "./UmaConfig.js";
-import { getLightsparkNodeQuery } from "@lightsparkdev/lightspark-sdk";
 
 export default class SendingVasp {
   private readonly requestCache: SendingVaspRequestCache =
@@ -459,6 +459,10 @@ export default class SendingVasp {
 
     let payment: OutgoingPayment;
     try {
+      const signingKeyLoaded = await this.loadNodeSigningKey();
+      if (!signingKeyLoaded) {
+        throw new Error("Error loading signing key.");
+      }
       const paymentResult = await this.lightsparkClient.payUmaInvoice(
         this.config.nodeID,
         payReqData.encodedInvoice,
@@ -564,6 +568,46 @@ export default class SendingVasp {
     } catch (e) {
       console.error("Error sending post transaction callback.", e);
     }
+  }
+
+  private async loadNodeSigningKey(): Promise<boolean> {
+    const node = await this.lightsparkClient.executeRawQuery(
+      getLightsparkNodeQuery(this.config.nodeID),
+    );
+    if (!node) {
+      throw new Error("Node not found.");
+    }
+
+    if (node.typename.includes("OSK")) {
+      if (
+        !this.config.oskSigningKeyPassword ||
+        this.config.oskSigningKeyPassword === ""
+      ) {
+        throw new Error(
+          "Node is an OSK, but no signing key password was provided in the config. " +
+            "Set the LIGHTSPARK_UMA_OSK_NODE_SIGNING_KEY_PASSWORD environment variable",
+        );
+      }
+      return await this.lightsparkClient.loadNodeSigningKey(
+        this.config.nodeID,
+        {
+          password: this.config.oskSigningKeyPassword,
+        },
+      );
+    }
+
+    // Assume remote signing node.
+    const remoteSigningMasterSeed = this.config.remoteSigningMasterSeed();
+    if (!remoteSigningMasterSeed) {
+      throw new Error(
+        "Node is a remote signing node, but no master seed was provided in the config. " +
+          "Set the LIGHTSPARK_UMA_REMOTE_SIGNING_NODE_MASTER_SEED environment variable",
+      );
+    }
+    return await this.lightsparkClient.loadNodeSigningKey(this.config.nodeID, {
+      masterSeed: remoteSigningMasterSeed,
+      network: node.bitcoinNetwork,
+    });
   }
 }
 
