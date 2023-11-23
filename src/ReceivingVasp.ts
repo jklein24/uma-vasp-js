@@ -115,13 +115,13 @@ export default class ReceivingVasp {
         },
         currencyOptions: [
           {
-            symbol: "$",
-            code: "USD",
-            name: "US Dollar",
-            maxSendable: 10_000_000,
+            symbol: "sat",
+            code: "SAT",
+            name: "Satoshis",
+            maxSendable: 10_000_000_000,
             minSendable: 1,
-            multiplier: 34_150,
-            displayDecimals: 2,
+            multiplier: 1000,
+            displayDecimals: 0,
           },
         ],
       });
@@ -170,8 +170,12 @@ export default class ReceivingVasp {
       return next(new Error("Invalid payreq signature.", { cause: e }));
     }
 
-    // In a real implementation, this come from an exchange rate API.
-    const exchangeRate = 34_150;
+    if (payreq.currency !== "SAT") {
+      return next(new Error("Invalid currency. Only SAT is supported."));
+    }
+
+    // In a real implementation for a fiat currency, this come from an exchange rate API.
+    const exchangeRateMillisatsToSats = 1000;
     // 3 minutes invoice expiration to avoid big fluctuations in exchange rate.
     const expirationTimeSec = 60 * 3;
     // In a real implementation, this would be the txId for your own internal
@@ -192,8 +196,8 @@ export default class ReceivingVasp {
     let response: uma.PayReqResponse;
     try {
       response = await uma.getPayReqResponse({
-        conversionRate: exchangeRate,
-        currencyCode: "USD",
+        conversionRate: exchangeRateMillisatsToSats,
+        currencyCode: "SAT",
         invoiceCreator: umaInvoiceCreator,
         metadata: this.getEncodedMetadata(),
         query: payreq,
