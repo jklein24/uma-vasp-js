@@ -44,7 +44,7 @@ export default class ReceivingVasp {
     } else {
       // Fall back to normal LNURLp.
       const callback = this.getLnurlpCallback(req, false);
-      const metadata = this.getEncodedMetadata();
+      const metadata = this.getEncodedMetadata(req);
       res.send({
         callback: callback,
         maxSendable: 10_000_000,
@@ -102,7 +102,7 @@ export default class ReceivingVasp {
         request: umaQuery,
         callback: this.getLnurlpCallback(req, true),
         requiresTravelRuleInfo: true,
-        encodedMetadata: this.getEncodedMetadata(),
+        encodedMetadata: this.getEncodedMetadata(req),
         minSendableSats: 1000,
         maxSendableSats: 10000000,
         privateKeyBytes: this.config.umaSigningPrivKey(),
@@ -199,7 +199,7 @@ export default class ReceivingVasp {
         conversionRate: exchangeRateMillisatsToSats,
         currencyCode: "SAT",
         invoiceCreator: umaInvoiceCreator,
-        metadata: this.getEncodedMetadata(),
+        metadata: this.getEncodedMetadata(req),
         query: payreq,
         receiverChannelUtxos: [],
         receiverFeesMillisats: 0,
@@ -232,7 +232,7 @@ export default class ReceivingVasp {
     const invoice = await this.lightsparkClient.createLnurlInvoice(
       this.config.nodeID,
       amountMsats,
-      this.getEncodedMetadata(),
+      this.getEncodedMetadata(req),
     );
     if (!invoice) {
       return next(new Error("Invoice creation failed."));
@@ -240,10 +240,10 @@ export default class ReceivingVasp {
     res.send({ pr: invoice.data.encodedPaymentRequest, routes: [] });
   }
 
-  private getEncodedMetadata(): string {
+  private getEncodedMetadata(req: Request): string {
     return JSON.stringify([
-      ["text/plain", `Pay ${this.config.username}@vasp2.com`],
-      ["text/identifier", `${this.config.username}@vasp2.com`],
+      ["text/plain", `Pay ${this.config.username}@${req.hostname}`],
+      ["text/identifier", `${this.config.username}@${req.hostname}`],
     ]);
   }
 
