@@ -134,7 +134,7 @@ export default class SendingVasp {
     );
 
     res.send({
-      currencies: lnurlpResponse.currencies,
+      receiverCurrencies: lnurlpResponse.currencies,
       minSendableSats: lnurlpResponse.minSendable,
       maxSendableSats: lnurlpResponse.maxSendable,
       callbackUuid: callbackUuid,
@@ -186,6 +186,17 @@ export default class SendingVasp {
         receivingVaspDomain,
       );
       res.send({
+        receiverCurrencies: [
+          {
+            symbol: "sat",
+            code: "SAT",
+            name: "Satoshis",
+            maxSendable: 10_000_000_000,
+            minSendable: 1,
+            multiplier: 1000,
+            displayDecimals: 0,
+          },
+        ],
         callbackUuid: callbackUuid,
         maxSendSats: lnurlResponse.maxSendable,
         minSendSats: lnurlResponse.minSendable,
@@ -229,7 +240,7 @@ export default class SendingVasp {
         res.status(400).send("Invalid callbackUuid");
         return;
       }
-      this.handleNonUmaPayReq(initialRequestData, amount, req, res);
+      this.handleNonUmaPayReq(initialRequestData, amount, res);
       return;
     }
 
@@ -254,6 +265,7 @@ export default class SendingVasp {
 
     const payerProfile = this.getPayerProfile(
       initialRequestData.lnurlpResponse.payerData,
+      req,
     );
     const trInfo =
       '["message": "Here is some fake travel rule info. It is up to you to actually implement this if needed."]';
@@ -343,7 +355,6 @@ export default class SendingVasp {
   private async handleNonUmaPayReq(
     initialRequestData: SendingVaspInitialRequestData,
     amount: number,
-    req: Request,
     res: Response,
   ) {
     const nonUmaLnurlpResponse = initialRequestData.nonUmaLnurlpResponse;
@@ -490,13 +501,17 @@ export default class SendingVasp {
    * NOTE: In a real application, you'd want to use the authentication context to pull out this information. It's not
    * actually always Alice sending the money ;-).
    */
-  private getPayerProfile(requiredPayerData: uma.PayerDataOptions) {    
-    const port = process.env.PORT || "8080";
-    const vaspDomain = this.config.vaspDomain || `localhost:${port}`;
+  private getPayerProfile(
+    requiredPayerData: uma.PayerDataOptions,
+    req: Request,
+  ) {
+    const vaspDomain = hostNameWithPort(req);
     return {
-      name: requiredPayerData.name?.mandatory ? "Alice FakeName" : undefined,
-      email: requiredPayerData.email?.mandatory ? `alice@${vaspDomain}` : undefined,
-      identifier: `$alice@${vaspDomain}`,
+      name: requiredPayerData.name?.mandatory ? "Some FakeName" : undefined,
+      email: requiredPayerData.email?.mandatory
+        ? `${this.config.username}@${vaspDomain}`
+        : undefined,
+      identifier: `$${this.config.username}@${vaspDomain}`,
     };
   }
 

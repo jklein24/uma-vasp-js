@@ -12,7 +12,6 @@ export default class UmaConfig {
     public readonly clientBaseURL: string | undefined,
     public readonly oskSigningKeyPassword: string | undefined,
     public readonly remoteSigningMasterSeedHex: string | undefined,
-    public readonly vaspDomain: string | undefined,
   ) {}
 
   static fromEnvironment(): UmaConfig {
@@ -30,7 +29,6 @@ export default class UmaConfig {
       process.env.LIGHTSPARK_EXAMPLE_BASE_URL,
       process.env.LIGHTSPARK_UMA_OSK_NODE_SIGNING_KEY_PASSWORD,
       process.env.LIGHTSPARK_UMA_REMOTE_SIGNING_NODE_MASTER_SEED,
-      process.env.LIGHTSPARK_UMA_VASP_DOMAIN,
     );
   }
 
