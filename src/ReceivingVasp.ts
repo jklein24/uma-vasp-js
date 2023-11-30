@@ -1,13 +1,14 @@
 import { hexToBytes } from "@lightsparkdev/core";
 import {
+  getLightsparkNodeQuery,
   LightsparkClient,
   LightsparkNode,
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
-import { Express, Request, Response } from "express";
+import { Express, Request } from "express";
+import { HttpResponse } from "networking/HttpResponse.js";
 import { errorMessage } from "./errors.js";
 import UmaConfig from "./UmaConfig.js";
-import { getLightsparkNodeQuery } from "@lightsparkdev/lightspark-sdk";
 
 export default class ReceivingVasp {
   constructor(
@@ -16,62 +17,86 @@ export default class ReceivingVasp {
     private readonly pubKeyCache: uma.PublicKeyCache,
     app: Express,
   ) {
-    app.get(
-      "/.well-known/lnurlp/:username",
-      this.handleLnrulpRequest.bind(this),
-    );
+    app.get("/.well-known/lnurlp/:username", async (req, resp) => {
+      const response = await this.handleLnrulpRequest(
+        req.params.username,
+        this.fullUrl(req),
+      );
+      resp.status(response.httpStatus).send(response.data);
+    });
 
-    app.get("/api/lnurl/payreq/:uuid", this.handleLnurlPayreq.bind(this));
+    app.get("/api/lnurl/payreq/:uuid", async (req, resp) => {
+      const response = await this.handleLnurlPayreq(
+        req.params.uuid,
+        this.fullUrl(req),
+      );
+      resp.status(response.httpStatus).send(response.data);
+    });
 
-    app.post("/api/uma/payreq/:uuid", this.handleUmaPayreq.bind(this));
+    app.post("/api/uma/payreq/:uuid", async (req, resp) => {
+      const response = await this.handleUmaPayreq(
+        req.params.uuid,
+        this.fullUrl(req),
+        req.body,
+      );
+      resp.status(response.httpStatus).send(response.data);
+    });
   }
 
-  private async handleLnrulpRequest(req: Request, res: Response, next: any) {
-    const username = req.params.username;
+  private fullUrl(req: Request): URL {
+    const protocol = this.getScheme(req);
+    return new URL(req.url, `${protocol}://${req.headers.host}`);
+  }
+
+  private async handleLnrulpRequest(
+    username: string,
+    requestUrl: URL,
+  ): Promise<HttpResponse> {
     if (
       username !== this.config.username &&
       username !== `$${this.config.username}`
     ) {
-      return next(new Error("User not found."));
+      return { httpStatus: 404, data: "User not found." };
     }
 
-    const isUma = uma.isUmaLnurlpQuery(
-      new URL(req.url, `${req.protocol}://${req.hostname}`),
-    );
+    if (uma.isUmaLnurlpQuery(requestUrl)) {
+      return this.handleUmaLnurlp(requestUrl);
+    }
 
-    if (isUma) {
-      return this.handleUmaLnurlp(req, res, next);
-    } else {
-      // Fall back to normal LNURLp.
-      const callback = this.getLnurlpCallback(req, false);
-      const metadata = this.getEncodedMetadata(req);
-      res.send({
+    // Fall back to normal LNURLp.
+    const callback = this.getLnurlpCallback(requestUrl, false);
+    const metadata = this.getEncodedMetadata(requestUrl);
+    return {
+      httpStatus: 200,
+      data: {
         callback: callback,
         maxSendable: 10_000_000,
         minSendable: 1_000,
         metadata: metadata,
         tag: "payRequest",
-      });
-    }
-    res.send("ok");
+      },
+    };
   }
 
-  private async handleUmaLnurlp(req: Request, res: Response, next: any) {
+  private async handleUmaLnurlp(requestUrl: URL): Promise<HttpResponse> {
     let umaQuery: uma.LnurlpRequest;
     try {
-      umaQuery = uma.parseLnurlpRequest(
-        new URL(req.url, `${req.protocol}://${req.headers.host}`),
-      );
+      umaQuery = uma.parseLnurlpRequest(requestUrl);
     } catch (e: any) {
       if (e instanceof uma.UnsupportedVersionError) {
         // For unsupported versions, return a 412 "Precondition Failed" as per the spec.
-        res.status(412).send({
-          supportedMajorVersions: e.supportedMajorVersions,
-          unsupportedVersion: e.unsupportedVersion,
-        });
-        return;
+        return {
+          httpStatus: 412,
+          data: {
+            supportedMajorVersions: e.supportedMajorVersions,
+            unsupportedVersion: e.unsupportedVersion,
+          },
+        };
       }
-      return next(new Error("Invalid UMA query.", { cause: e }));
+      return {
+        httpStatus: 500,
+        data: new Error("Invalid UMA Query", { cause: e }),
+      };
     }
 
     let pubKeys: uma.PubKeyResponse;
@@ -82,7 +107,10 @@ export default class ReceivingVasp {
       });
     } catch (e) {
       console.error(e);
-      return next(new Error("Failed to fetch public key.", { cause: e }));
+      return {
+        httpStatus: 500,
+        data: new Error("Failed to fetch public key.", { cause: e }),
+      };
     }
 
     try {
@@ -91,18 +119,24 @@ export default class ReceivingVasp {
         hexToBytes(pubKeys.signingPubKey),
       );
       if (!isSignatureValid) {
-        return next(new Error("Invalid UMA query signature."));
+        return {
+          httpStatus: 500,
+          data: "Invalid UMA query signature.",
+        };
       }
     } catch (e) {
-      return next(new Error("Invalid UMA query signature.", { cause: e }));
+      return {
+        httpStatus: 500,
+        data: new Error("Invalid UMA query signature.", { cause: e }),
+      };
     }
 
     try {
       const response = await uma.getLnurlpResponse({
         request: umaQuery,
-        callback: this.getLnurlpCallback(req, true),
+        callback: this.getLnurlpCallback(requestUrl, true),
         requiresTravelRuleInfo: true,
-        encodedMetadata: this.getEncodedMetadata(req),
+        encodedMetadata: this.getEncodedMetadata(requestUrl),
         minSendableSats: 1000,
         maxSendableSats: 10000000,
         privateKeyBytes: this.config.umaSigningPrivKey(),
@@ -125,25 +159,33 @@ export default class ReceivingVasp {
           },
         ],
       });
-      res.send(response);
-      return "ok";
+      return { httpStatus: 200, data: response };
     } catch (e) {
       console.error(e);
-      return next(new Error("Failed to generate UMA response.", { cause: e }));
+      return {
+        httpStatus: 500,
+        data: new Error("Failed to generate UMA response.", { cause: e }),
+      };
     }
   }
 
-  private async handleUmaPayreq(req: Request, res: Response, next: any) {
-    const uuid = req.params.uuid;
-    if (uuid !== this.config.userID) {
-      return next(new Error("User not found."));
+  private async handleUmaPayreq(
+    userId: string,
+    requestUrl: URL,
+    requestBody: string,
+  ): Promise<HttpResponse> {
+    if (userId !== this.config.userID) {
+      return { httpStatus: 404, data: "User not found." };
     }
 
     let payreq: uma.PayRequest;
     try {
-      payreq = uma.parsePayRequest(req.body);
+      payreq = uma.parsePayRequest(requestBody);
     } catch (e) {
-      return next(new Error("Invalid UMA pay request.", { cause: e }));
+      return {
+        httpStatus: 500,
+        data: new Error("Invalid UMA pay request.", { cause: e }),
+      };
     }
 
     let pubKeys: uma.PubKeyResponse;
@@ -155,7 +197,10 @@ export default class ReceivingVasp {
         ),
       });
     } catch (e) {
-      return next(new Error("Failed to fetch public key.", { cause: e }));
+      return {
+        httpStatus: 500,
+        data: new Error("Failed to fetch public key.", { cause: e }),
+      };
     }
 
     try {
@@ -164,14 +209,21 @@ export default class ReceivingVasp {
         hexToBytes(pubKeys.signingPubKey),
       );
       if (!isSignatureValid) {
-        return next(new Error("Invalid payreq signature."));
+        return { httpStatus: 400, data: "Invalid payreq signature." };
       }
     } catch (e) {
-      return next(new Error("Invalid payreq signature.", { cause: e }));
+      return {
+        httpStatus: 500,
+        data: new Error("Invalid payreq signature.", { cause: e }),
+      };
     }
 
+    // TODO(Jeremy): Use the usermanager here.
     if (payreq.currency !== "SAT") {
-      return next(new Error("Invalid currency. Only SAT is supported."));
+      return {
+        httpStatus: 400,
+        data: "Invalid currency. Only SAT is supported.",
+      };
     }
 
     // In a real implementation for a fiat currency, this come from an exchange rate API.
@@ -199,51 +251,65 @@ export default class ReceivingVasp {
         conversionRate: exchangeRateMillisatsToSats,
         currencyCode: "SAT",
         invoiceCreator: umaInvoiceCreator,
-        metadata: this.getEncodedMetadata(req),
+        metadata: this.getEncodedMetadata(requestUrl),
         query: payreq,
         receiverChannelUtxos: [],
         receiverFeesMillisats: 0,
         receiverNodePubKey: await this.getReceiverNodePubKey(),
-        utxoCallback: this.getUtxoCallback(req, txId),
+        utxoCallback: this.getUtxoCallback(requestUrl, txId),
       });
-      res.send(response);
-      return "ok";
+      return { httpStatus: 200, data: response };
     } catch (e) {
       console.error(e);
-      return next(new Error("Failed to generate UMA response.", { cause: e }));
+      return {
+        httpStatus: 500,
+        data: new Error("Failed to generate UMA response.", { cause: e }),
+      };
     }
   }
 
   /**
    * Handler for a normal LNURL (non-UMA) LNURLp request.
    */
-  private async handleLnurlPayreq(req: Request, res: Response, next: any) {
-    const uuid = req.params.uuid;
-    if (uuid !== this.config.userID) {
-      return next(new Error("User not found."));
+  private async handleLnurlPayreq(
+    userId: string,
+    requestUrl: URL,
+  ): Promise<HttpResponse> {
+    if (userId !== this.config.userID) {
+      return { httpStatus: 404, data: "User not found." };
     }
 
-    const amountMsats = parseInt(req.query.amount as string);
+    const amountMsats = parseInt(
+      requestUrl.searchParams.get("amount") as string,
+    );
     if (!amountMsats) {
-      res.status(400).send(errorMessage("Missing amount query parameter."));
-      return;
+      return {
+        httpStatus: 400,
+        data: errorMessage("Missing amount query parameter."),
+      };
     }
 
     const invoice = await this.lightsparkClient.createLnurlInvoice(
       this.config.nodeID,
       amountMsats,
-      this.getEncodedMetadata(req),
+      this.getEncodedMetadata(requestUrl),
     );
     if (!invoice) {
-      return next(new Error("Invoice creation failed."));
+      return {
+        httpStatus: 500,
+        data: errorMessage("Invoice creation failed."),
+      };
     }
-    res.send({ pr: invoice.data.encodedPaymentRequest, routes: [] });
+    return {
+      httpStatus: 200,
+      data: { pr: invoice.data.encodedPaymentRequest, routes: [] },
+    };
   }
 
-  private getEncodedMetadata(req: Request): string {
+  private getEncodedMetadata(requestUrl: URL): string {
     return JSON.stringify([
-      ["text/plain", `Pay ${this.config.username}@${req.hostname}`],
-      ["text/identifier", `${this.config.username}@${req.hostname}`],
+      ["text/plain", `Pay ${this.config.username}@${requestUrl.hostname}`],
+      ["text/identifier", `${this.config.username}@${requestUrl.hostname}`],
     ]);
   }
 
@@ -251,15 +317,16 @@ export default class ReceivingVasp {
     return req.hostname.startsWith("localhost") ? "http" : "https";
   }
 
-  private getLnurlpCallback(req: Request, isUma: boolean): string {
-    const protocol = this.getScheme(req);
-    const fullUrl = new URL(req.url, `${protocol}://${req.headers.host}`);
+  private getLnurlpCallback(fullUrl: URL, isUma: boolean): string {
+    const protocol = fullUrl.hostname.startsWith("localhost")
+      ? "http"
+      : "https";
     const port = fullUrl.port;
     const portString =
       port === "80" || port === "443" || port === "" ? "" : `:${port}`;
     const umaOrLnurl = isUma ? "uma" : "lnurl";
     const path = `/api/${umaOrLnurl}/payreq/${this.config.userID}`;
-    return `${protocol}://${req.hostname}${portString}${path}`;
+    return `${protocol}://${fullUrl.hostname}${portString}${path}`;
   }
 
   private async getReceiverNodePubKey(): Promise<string> {
@@ -279,8 +346,8 @@ export default class ReceivingVasp {
     return node.publicKey;
   }
 
-  private getUtxoCallback(req: Request, txId: String): string {
+  private getUtxoCallback(requestUrl: URL, txId: String): string {
     const path = `/api/uma/utxoCallback?txId=${txId}`;
-    return `${this.getScheme(req)}://${req.hostname}${path}`;
+    return `${requestUrl.protocol}://${requestUrl.hostname}${path}`;
   }
 }
