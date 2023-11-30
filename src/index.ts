@@ -4,6 +4,7 @@ import {
 } from "@lightsparkdev/lightspark-sdk";
 import { InMemoryPublicKeyCache } from "@uma-sdk/core";
 import bodyParser from "body-parser";
+import { DemoUserService } from "demo/DemoUserService.js";
 import express from "express";
 import { errorMessage } from "./errors.js";
 import ReceivingVasp from "./ReceivingVasp.js";
@@ -21,11 +22,22 @@ const lightsparkClient = new LightsparkClient(
 );
 
 const pubKeyCache = new InMemoryPublicKeyCache();
-const sendingVasp = new SendingVasp(config, lightsparkClient, pubKeyCache, app);
+
+// TO IMPLEMENT: Replace with real user service.
+const userService = new DemoUserService();
+
+const sendingVasp = new SendingVasp(
+  config,
+  lightsparkClient,
+  pubKeyCache,
+  userService,
+  app,
+);
 const receivingVasp = new ReceivingVasp(
   config,
   lightsparkClient,
   pubKeyCache,
+  userService,
   app,
 );
 

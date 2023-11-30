@@ -8,9 +8,11 @@ import {
   TransactionStatus,
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
-import { Express } from "express";
+import { Express, Request } from "express";
 import { fullUrlForRequest, sendResponse } from "networking/expressAdapters.js";
 import { HttpResponse } from "networking/HttpResponse.js";
+import { User } from "User.js";
+import UserService from "UserService.js";
 import { NonUmaLnurlpResponseSchema } from "./rawLnurl.js";
 import SendingVaspRequestCache, {
   SendingVaspInitialRequestData,
@@ -26,9 +28,20 @@ export default class SendingVasp {
     private readonly config: UmaConfig,
     private readonly lightsparkClient: LightsparkClient,
     private readonly pubKeyCache: uma.PublicKeyCache,
+    userService: UserService,
     app: Express,
   ) {
-    app.get("/api/umalookup/:receiver", async (req, resp) => {
+    app.get("/api/umalookup/:receiver", async (req: Request, resp) => {
+      const user = await userService.getCallingUserFromRequest(
+        fullUrlForRequest(req),
+        req.headers,
+      );
+      if (!user) {
+        return sendResponse(resp, {
+          httpStatus: 401,
+          data: "Unauthorized",
+        });
+      }
       const response = await this.handleClientUmaLookup(
         req.params.receiver,
         fullUrlForRequest(req),
@@ -36,8 +49,19 @@ export default class SendingVasp {
       sendResponse(resp, response);
     });
 
-    app.get("/api/umapayreq/:callbackUuid", async (req, resp) => {
+    app.get("/api/umapayreq/:callbackUuid", async (req: Request, resp) => {
+      const user = await userService.getCallingUserFromRequest(
+        fullUrlForRequest(req),
+        req.headers,
+      );
+      if (!user) {
+        return sendResponse(resp, {
+          httpStatus: 401,
+          data: "Unauthorized",
+        });
+      }
       const response = await this.handleClientUmaPayreq(
+        user,
         req.params.callbackUuid,
         fullUrlForRequest(req),
       );
@@ -45,6 +69,16 @@ export default class SendingVasp {
     });
 
     app.get("/api/sendpayment/:callbackUuid", async (req, resp) => {
+      const user = await userService.getCallingUserFromRequest(
+        fullUrlForRequest(req),
+        req.headers,
+      );
+      if (!user) {
+        return sendResponse(resp, {
+          httpStatus: 401,
+          data: "Unauthorized",
+        });
+      }
       const response = await this.handleClientSendPayment(
         req.params.callbackUuid,
         fullUrlForRequest(req),
@@ -236,6 +270,7 @@ export default class SendingVasp {
   }
 
   private async handleClientUmaPayreq(
+    user: User,
     callbackUuid: string,
     requestUrl: URL,
   ): Promise<HttpResponse> {
@@ -286,6 +321,7 @@ export default class SendingVasp {
       };
 
     const payerProfile = this.getPayerProfile(
+      user,
       initialRequestData.lnurlpResponse.payerData,
       hostNameWithPort(requestUrl),
     );
@@ -521,15 +557,16 @@ export default class SendingVasp {
    * actually always Alice sending the money ;-).
    */
   private getPayerProfile(
+    user: User,
     requiredPayerData: uma.PayerDataOptions,
     vaspDomain: string,
   ) {
     return {
-      name: requiredPayerData.name?.mandatory ? "Some FakeName" : undefined,
+      name: requiredPayerData.name?.mandatory ? user.name ?? "" : undefined,
       email: requiredPayerData.email?.mandatory
-        ? `${this.config.username}@${vaspDomain}`
+        ? user.emailAddress ?? ""
         : undefined,
-      identifier: `$${this.config.username}@${vaspDomain}`,
+      identifier: `$${user.umaUserName}@${vaspDomain}`,
     };
   }
 

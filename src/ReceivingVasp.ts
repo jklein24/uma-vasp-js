@@ -8,6 +8,8 @@ import * as uma from "@uma-sdk/core";
 import { Express } from "express";
 import { fullUrlForRequest, sendResponse } from "networking/expressAdapters.js";
 import { HttpResponse } from "networking/HttpResponse.js";
+import { User } from "User.js";
+import UserService from "UserService.js";
 import { errorMessage } from "./errors.js";
 import UmaConfig from "./UmaConfig.js";
 
@@ -16,6 +18,7 @@ export default class ReceivingVasp {
     private readonly config: UmaConfig,
     private readonly lightsparkClient: LightsparkClient,
     private readonly pubKeyCache: uma.PublicKeyCache,
+    private readonly userService: UserService,
     app: Express,
   ) {
     app.get("/.well-known/lnurlp/:username", async (req, resp) => {
@@ -48,20 +51,18 @@ export default class ReceivingVasp {
     username: string,
     requestUrl: URL,
   ): Promise<HttpResponse> {
-    if (
-      username !== this.config.username &&
-      username !== `$${this.config.username}`
-    ) {
+    const user = await this.userService.getUserByUma(username);
+    if (!user) {
       return { httpStatus: 404, data: "User not found." };
     }
 
     if (uma.isUmaLnurlpQuery(requestUrl)) {
-      return this.handleUmaLnurlp(requestUrl);
+      return this.handleUmaLnurlp(requestUrl, user);
     }
 
     // Fall back to normal LNURLp.
-    const callback = this.getLnurlpCallback(requestUrl, false);
-    const metadata = this.getEncodedMetadata(requestUrl);
+    const callback = this.getLnurlpCallback(requestUrl, false, user);
+    const metadata = this.getEncodedMetadata(requestUrl, user);
     return {
       httpStatus: 200,
       data: {
@@ -74,7 +75,10 @@ export default class ReceivingVasp {
     };
   }
 
-  private async handleUmaLnurlp(requestUrl: URL): Promise<HttpResponse> {
+  private async handleUmaLnurlp(
+    requestUrl: URL,
+    user: User,
+  ): Promise<HttpResponse> {
     let umaQuery: uma.LnurlpRequest;
     try {
       umaQuery = uma.parseLnurlpRequest(requestUrl);
@@ -130,9 +134,9 @@ export default class ReceivingVasp {
     try {
       const response = await uma.getLnurlpResponse({
         request: umaQuery,
-        callback: this.getLnurlpCallback(requestUrl, true),
+        callback: this.getLnurlpCallback(requestUrl, true, user),
         requiresTravelRuleInfo: true,
-        encodedMetadata: this.getEncodedMetadata(requestUrl),
+        encodedMetadata: this.getEncodedMetadata(requestUrl, user),
         minSendableSats: 1000,
         maxSendableSats: 10000000,
         privateKeyBytes: this.config.umaSigningPrivKey(),
@@ -170,7 +174,8 @@ export default class ReceivingVasp {
     requestUrl: URL,
     requestBody: string,
   ): Promise<HttpResponse> {
-    if (userId !== this.config.userID) {
+    const user = await this.userService.getUserById(userId);
+    if (!user) {
       return { httpStatus: 404, data: "User not found." };
     }
 
@@ -247,7 +252,7 @@ export default class ReceivingVasp {
         conversionRate: exchangeRateMillisatsToSats,
         currencyCode: "SAT",
         invoiceCreator: umaInvoiceCreator,
-        metadata: this.getEncodedMetadata(requestUrl),
+        metadata: this.getEncodedMetadata(requestUrl, user),
         query: payreq,
         receiverChannelUtxos: [],
         receiverFeesMillisats: 0,
@@ -271,7 +276,8 @@ export default class ReceivingVasp {
     userId: string,
     requestUrl: URL,
   ): Promise<HttpResponse> {
-    if (userId !== this.config.userID) {
+    const user = await this.userService.getUserById(userId);
+    if (!user) {
       return { httpStatus: 404, data: "User not found." };
     }
 
@@ -288,7 +294,7 @@ export default class ReceivingVasp {
     const invoice = await this.lightsparkClient.createLnurlInvoice(
       this.config.nodeID,
       amountMsats,
-      this.getEncodedMetadata(requestUrl),
+      this.getEncodedMetadata(requestUrl, user),
     );
     if (!invoice) {
       return {
@@ -302,14 +308,14 @@ export default class ReceivingVasp {
     };
   }
 
-  private getEncodedMetadata(requestUrl: URL): string {
+  private getEncodedMetadata(requestUrl: URL, user: User): string {
     return JSON.stringify([
-      ["text/plain", `Pay ${this.config.username}@${requestUrl.hostname}`],
-      ["text/identifier", `${this.config.username}@${requestUrl.hostname}`],
+      ["text/plain", `Pay ${user.umaUserName}@${requestUrl.hostname}`],
+      ["text/identifier", `${user.umaUserName}@${requestUrl.hostname}`],
     ]);
   }
 
-  private getLnurlpCallback(fullUrl: URL, isUma: boolean): string {
+  private getLnurlpCallback(fullUrl: URL, isUma: boolean, user: User): string {
     const protocol = fullUrl.hostname.startsWith("localhost")
       ? "http"
       : "https";
@@ -317,7 +323,7 @@ export default class ReceivingVasp {
     const portString =
       port === "80" || port === "443" || port === "" ? "" : `:${port}`;
     const umaOrLnurl = isUma ? "uma" : "lnurl";
-    const path = `/api/${umaOrLnurl}/payreq/${this.config.userID}`;
+    const path = `/api/${umaOrLnurl}/payreq/${user.id}`;
     return `${protocol}://${fullUrl.hostname}${portString}${path}`;
   }
 
