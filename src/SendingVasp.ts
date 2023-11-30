@@ -189,6 +189,7 @@ export default class SendingVasp {
       receivingVaspDomain,
     );
 
+    // TODO(Jeremy): Add the sending currency too for display purposes.
     return {
       httpStatus: 200,
       data: {

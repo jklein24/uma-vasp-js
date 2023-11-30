@@ -131,6 +131,16 @@ export default class ReceivingVasp {
       };
     }
 
+    const currencyPrefs = await this.userService.getCurrencyPreferencesForUser(
+      user.id,
+    );
+    if (!currencyPrefs) {
+      return {
+        httpStatus: 500,
+        data: "Failed to fetch currency preferences.",
+      };
+    }
+
     try {
       const response = await uma.getLnurlpResponse({
         request: umaQuery,
@@ -147,17 +157,7 @@ export default class ReceivingVasp {
           email: { mandatory: false },
           compliance: { mandatory: true },
         },
-        currencyOptions: [
-          {
-            symbol: "sat",
-            code: "SAT",
-            name: "Satoshis",
-            maxSendable: 10_000_000_000,
-            minSendable: 1,
-            multiplier: 1000,
-            displayDecimals: 0,
-          },
-        ],
+        currencyOptions: currencyPrefs,
       });
       return { httpStatus: 200, data: response };
     } catch (e) {
@@ -219,16 +219,23 @@ export default class ReceivingVasp {
       };
     }
 
-    // TODO(Jeremy): Use the usermanager here.
-    if (payreq.currency !== "SAT") {
+    const currencyPrefs = await this.userService.getCurrencyPreferencesForUser(
+      user.id,
+    );
+    if (!currencyPrefs) {
+      return {
+        httpStatus: 500,
+        data: "Failed to fetch currency preferences.",
+      };
+    }
+    const currency = currencyPrefs.find((c) => c.code === payreq.currency);
+    if (!currency) {
       return {
         httpStatus: 400,
-        data: "Invalid currency. Only SAT is supported.",
+        data: `Invalid currency. This user does not accept ${payreq.currency}.`,
       };
     }
 
-    // In a real implementation for a fiat currency, this come from an exchange rate API.
-    const exchangeRateMillisatsToSats = 1000;
     // 3 minutes invoice expiration to avoid big fluctuations in exchange rate.
     const expirationTimeSec = 60 * 3;
     // In a real implementation, this would be the txId for your own internal
@@ -249,8 +256,8 @@ export default class ReceivingVasp {
     let response: uma.PayReqResponse;
     try {
       response = await uma.getPayReqResponse({
-        conversionRate: exchangeRateMillisatsToSats,
-        currencyCode: "SAT",
+        conversionRate: currency.multiplier,
+        currencyCode: currency.code,
         invoiceCreator: umaInvoiceCreator,
         metadata: this.getEncodedMetadata(requestUrl, user),
         query: payreq,
