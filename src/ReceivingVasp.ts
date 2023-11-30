@@ -5,7 +5,8 @@ import {
   LightsparkNode,
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
-import { Express, Request } from "express";
+import { Express } from "express";
+import { fullUrlForRequest, sendResponse } from "networking/expressAdapters.js";
 import { HttpResponse } from "networking/HttpResponse.js";
 import { errorMessage } from "./errors.js";
 import UmaConfig from "./UmaConfig.js";
@@ -20,32 +21,27 @@ export default class ReceivingVasp {
     app.get("/.well-known/lnurlp/:username", async (req, resp) => {
       const response = await this.handleLnrulpRequest(
         req.params.username,
-        this.fullUrl(req),
+        fullUrlForRequest(req),
       );
-      resp.status(response.httpStatus).send(response.data);
+      sendResponse(resp, response);
     });
 
     app.get("/api/lnurl/payreq/:uuid", async (req, resp) => {
       const response = await this.handleLnurlPayreq(
         req.params.uuid,
-        this.fullUrl(req),
+        fullUrlForRequest(req),
       );
-      resp.status(response.httpStatus).send(response.data);
+      sendResponse(resp, response);
     });
 
     app.post("/api/uma/payreq/:uuid", async (req, resp) => {
       const response = await this.handleUmaPayreq(
         req.params.uuid,
-        this.fullUrl(req),
+        fullUrlForRequest(req),
         req.body,
       );
-      resp.status(response.httpStatus).send(response.data);
+      sendResponse(resp, response);
     });
-  }
-
-  private fullUrl(req: Request): URL {
-    const protocol = this.getScheme(req);
-    return new URL(req.url, `${protocol}://${req.headers.host}`);
   }
 
   private async handleLnrulpRequest(
@@ -311,10 +307,6 @@ export default class ReceivingVasp {
       ["text/plain", `Pay ${this.config.username}@${requestUrl.hostname}`],
       ["text/identifier", `${this.config.username}@${requestUrl.hostname}`],
     ]);
-  }
-
-  private getScheme(req: Request): string {
-    return req.hostname.startsWith("localhost") ? "http" : "https";
   }
 
   private getLnurlpCallback(fullUrl: URL, isUma: boolean): string {
