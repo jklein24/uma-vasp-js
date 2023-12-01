@@ -1,5 +1,6 @@
 import { convertCurrencyAmount, hexToBytes } from "@lightsparkdev/core";
 import {
+  CurrencyAmount,
   CurrencyUnit,
   getLightsparkNodeQuery,
   InvoiceData,
@@ -9,6 +10,7 @@ import {
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
 import { Express, Request } from "express";
+import InternalLedgerService from "InternalLedgerService.js";
 import { fullUrlForRequest, sendResponse } from "networking/expressAdapters.js";
 import { HttpResponse } from "networking/HttpResponse.js";
 import { User } from "User.js";
@@ -28,7 +30,8 @@ export default class SendingVasp {
     private readonly config: UmaConfig,
     private readonly lightsparkClient: LightsparkClient,
     private readonly pubKeyCache: uma.PublicKeyCache,
-    userService: UserService,
+    private readonly userService: UserService,
+    private readonly ledgerService: InternalLedgerService,
     app: Express,
   ) {
     app.get("/api/umalookup/:receiver", async (req: Request, resp) => {
@@ -80,8 +83,8 @@ export default class SendingVasp {
         });
       }
       const response = await this.handleClientSendPayment(
+        user,
         req.params.callbackUuid,
-        fullUrlForRequest(req),
       );
       sendResponse(resp, response);
     });
@@ -294,6 +297,17 @@ export default class SendingVasp {
       return { httpStatus: 400, data: "Invalid amount" };
     }
 
+    const currencyAmountMillisats = {
+      originalValue: amount,
+      originalUnit: CurrencyUnit.MILLISATOSHI,
+      preferredCurrencyUnit: CurrencyUnit.MILLISATOSHI,
+      preferredCurrencyValueRounded: amount,
+      preferredCurrencyValueApprox: amount,
+    };
+    if (!this.checkInternalLedgerBalance(user.id, currencyAmountMillisats)) {
+      return { httpStatus: 400, data: "Insufficient balance." };
+    }
+
     if (!initialRequestData.lnurlpResponse) {
       if (!initialRequestData.nonUmaLnurlpResponse) {
         return { httpStatus: 400, data: "Invalid callbackUuid" };
@@ -328,8 +342,7 @@ export default class SendingVasp {
     );
     const trInfo =
       '["message": "Here is some fake travel rule info. It is up to you to actually implement this if needed."]';
-    // TODO(Jeremy): In practice this should be loaded from your node:
-    const payerUtxos: string[] = [];
+    const node = await this.getLightsparkNode();
     const utxoCallback = this.getUtxoCallback(requestUrl, "1234abcd");
 
     let payReq: uma.PayRequest;
@@ -343,8 +356,8 @@ export default class SendingVasp {
         payerKycStatus: uma.KycStatus.Verified,
         utxoCallback,
         trInfo,
-        payerUtxos,
-        payerNodePubKey: await this.getNodePubKey(),
+        payerUtxos: node.umaPrescreeningUtxos,
+        payerNodePubKey: node.publicKey ?? "",
         payerName: payerProfile.name,
         payerEmail: payerProfile.email,
       });
@@ -390,6 +403,7 @@ export default class SendingVasp {
     }
 
     const newCallbackUuid = this.requestCache.savePayReqData(
+      payerProfile.identifier,
       payResponse.pr,
       utxoCallback,
       invoice,
@@ -457,6 +471,7 @@ export default class SendingVasp {
     }
 
     const newCallbackUuid = this.requestCache.savePayReqData(
+      "", // TODO(Jeremy): Parse LUD-18 payerdata for this.
       encodedInvoice,
       "", // No utxo callback for non-UMA lnurl.
       invoice,
@@ -475,7 +490,7 @@ export default class SendingVasp {
     };
   }
 
-  private async getNodePubKey() {
+  private async getLightsparkNode() {
     const node = await this.lightsparkClient.executeRawQuery(
       getLightsparkNodeQuery(this.config.nodeID),
     );
@@ -483,7 +498,7 @@ export default class SendingVasp {
       throw new Error("Node not found.");
     }
 
-    return node.publicKey ?? "";
+    return node;
   }
 
   private async fetchPubKeys(receivingVaspDomain: string) {
@@ -499,8 +514,8 @@ export default class SendingVasp {
   }
 
   private async handleClientSendPayment(
+    user: User,
     callbackUuid: string,
-    requestUrl: URL,
   ): Promise<HttpResponse> {
     if (!callbackUuid || callbackUuid === "") {
       return { httpStatus: 400, data: "Missing callbackUuid" };
@@ -522,7 +537,19 @@ export default class SendingVasp {
       };
     }
 
+    if (
+      !this.checkInternalLedgerBalance(user.id, payReqData.invoiceData.amount)
+    ) {
+      return { httpStatus: 400, data: "Insufficient balance." };
+    }
+
+    const amountMsats = convertCurrencyAmount(
+      payReqData.invoiceData.amount,
+      CurrencyUnit.MILLISATOSHI,
+    ).preferredCurrencyValueRounded;
+
     let payment: OutgoingPayment;
+    let paymentId: string | undefined = undefined;
     try {
       const signingKeyLoaded = await this.loadNodeSigningKey();
       if (!signingKeyLoaded) {
@@ -536,9 +563,30 @@ export default class SendingVasp {
       if (!paymentResult) {
         throw new Error("Payment request failed.");
       }
+      paymentId = paymentResult.id;
+      await this.ledgerService.recordOutgoingTransactionBegan(
+        user.id,
+        payReqData.receiverUmaAddress,
+        amountMsats,
+        paymentId,
+      );
       payment = await this.waitForPaymentCompletion(paymentResult);
+      await this.ledgerService.recordOutgoingTransactionSucceeded(
+        user.id,
+        payReqData.receiverUmaAddress,
+        amountMsats,
+        paymentId,
+      );
     } catch (e) {
       console.error("Error paying invoice.", e);
+      if (paymentId !== undefined) {
+        await this.ledgerService.recordOutgoingTransactionFailed(
+          user.id,
+          payReqData.receiverUmaAddress,
+          amountMsats,
+          paymentId,
+        );
+      }
       return { httpStatus: 500, data: "Error paying invoice." };
     }
 
@@ -551,6 +599,18 @@ export default class SendingVasp {
         didSucceed: payment.status === TransactionStatus.SUCCESS,
       },
     };
+  }
+
+  private async checkInternalLedgerBalance(
+    userId: string,
+    amount: CurrencyAmount,
+  ): Promise<boolean> {
+    const balanceMsats = await this.ledgerService.getUserBalanceMsats(userId);
+    const amountMsats = convertCurrencyAmount(
+      amount,
+      CurrencyUnit.MILLISATOSHI,
+    ).preferredCurrencyValueRounded;
+    return balanceMsats >= amountMsats;
   }
 
   /**

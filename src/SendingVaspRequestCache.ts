@@ -63,12 +63,14 @@ export default class SendingVaspRequestCache {
   }
 
   public savePayReqData(
+    receiverUmaAddress: string,
     encodedInvoice: string,
     utxoCallback: string,
     invoiceData: InvoiceData,
   ): string {
     const uuid = uuidv4();
     this.payReqCache.set(uuid, {
+      receiverUmaAddress,
       encodedInvoice,
       utxoCallback,
       invoiceData,
@@ -91,6 +93,7 @@ export interface SendingVaspInitialRequestData {
  * This is the data that we cache for the payreq request.
  */
 export interface SendingVaspPayReqData {
+  receiverUmaAddress: string;
   encodedInvoice: string;
   utxoCallback: string;
   invoiceData: InvoiceData;

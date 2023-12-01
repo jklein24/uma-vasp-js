@@ -10,6 +10,7 @@ import { errorMessage } from "./errors.js";
 import ReceivingVasp from "./ReceivingVasp.js";
 import SendingVasp from "./SendingVasp.js";
 import UmaConfig from "./UmaConfig.js";
+import DemoInternalLedgerService from "demo/DemoInternalLedgerService.js";
 
 export const app = express();
 const config = UmaConfig.fromEnvironment();
@@ -26,11 +27,15 @@ const pubKeyCache = new InMemoryPublicKeyCache();
 // TO IMPLEMENT: Replace with real user service.
 const userService = new DemoUserService();
 
+// TO IMPLEMENT: Replace with real ledger implementation.
+const ledgerService = new DemoInternalLedgerService(config, userService, lightsparkClient);
+
 const sendingVasp = new SendingVasp(
   config,
   lightsparkClient,
   pubKeyCache,
   userService,
+  ledgerService,
   app,
 );
 const receivingVasp = new ReceivingVasp(
