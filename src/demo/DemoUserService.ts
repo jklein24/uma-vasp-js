@@ -1,7 +1,7 @@
 import { Currency } from "@uma-sdk/core";
-import { requireEnv } from "UmaConfig.js";
-import { User } from "User.js";
-import UserService from "UserService.js";
+import { requireEnv } from "../UmaConfig.js";
+import { User } from "../User.js";
+import UserService from "../UserService.js";
 
 // Static UUID so that callback URLs are always the same.
 const DEMO_UID = "4b41ae03-01b8-4974-8d26-26a35d28851b";

@@ -10,11 +10,11 @@ import {
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
 import { Express, Request } from "express";
-import InternalLedgerService from "InternalLedgerService.js";
-import { fullUrlForRequest, sendResponse } from "networking/expressAdapters.js";
-import { HttpResponse } from "networking/HttpResponse.js";
-import { User } from "User.js";
-import UserService from "UserService.js";
+import InternalLedgerService from "./InternalLedgerService.js";
+import { fullUrlForRequest, sendResponse } from "./networking/expressAdapters.js";
+import { HttpResponse } from "./networking/HttpResponse.js";
+import { User } from "./User.js";
+import UserService from "./UserService.js";
 import { NonUmaLnurlpResponseSchema } from "./rawLnurl.js";
 import SendingVaspRequestCache, {
   SendingVaspInitialRequestData,

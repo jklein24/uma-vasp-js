@@ -3,9 +3,9 @@ import {
   getLightsparkNodeQuery,
   LightsparkClient,
 } from "@lightsparkdev/lightspark-sdk";
-import InternalLedgerService from "InternalLedgerService.js";
-import UmaConfig from "UmaConfig.js";
-import UserService from "UserService.js";
+import InternalLedgerService from "../InternalLedgerService.js";
+import UmaConfig from "../UmaConfig.js";
+import UserService from "../UserService.js";
 
 export default class DemoInternalLedgerService
   implements InternalLedgerService

@@ -6,10 +6,10 @@ import {
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
 import { Express } from "express";
-import { fullUrlForRequest, sendResponse } from "networking/expressAdapters.js";
-import { HttpResponse } from "networking/HttpResponse.js";
-import { User } from "User.js";
-import UserService from "UserService.js";
+import { fullUrlForRequest, sendResponse } from "./networking/expressAdapters.js";
+import { HttpResponse } from "./networking/HttpResponse.js";
+import { User } from "./User.js";
+import UserService from "./UserService.js";
 import { errorMessage } from "./errors.js";
 import UmaConfig from "./UmaConfig.js";
 

@@ -4,13 +4,13 @@ import {
 } from "@lightsparkdev/lightspark-sdk";
 import { InMemoryPublicKeyCache } from "@uma-sdk/core";
 import bodyParser from "body-parser";
-import { DemoUserService } from "demo/DemoUserService.js";
+import { DemoUserService } from "./demo/DemoUserService.js";
 import express from "express";
 import { errorMessage } from "./errors.js";
 import ReceivingVasp from "./ReceivingVasp.js";
 import SendingVasp from "./SendingVasp.js";
 import UmaConfig from "./UmaConfig.js";
-import DemoInternalLedgerService from "demo/DemoInternalLedgerService.js";
+import DemoInternalLedgerService from "./demo/DemoInternalLedgerService.js";
 
 export const app = express();
 const config = UmaConfig.fromEnvironment();
