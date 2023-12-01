@@ -46,6 +46,7 @@ export default class SendingVasp {
         });
       }
       const response = await this.handleClientUmaLookup(
+        user,
         req.params.receiver,
         fullUrlForRequest(req),
       );
@@ -91,6 +92,7 @@ export default class SendingVasp {
   }
 
   private async handleClientUmaLookup(
+    user: User,
     receiverUmaAddress: string,
     requestUrl: URL,
   ): Promise<HttpResponse> {
@@ -192,10 +194,14 @@ export default class SendingVasp {
       receivingVaspDomain,
     );
 
+    const senderCurrencies =
+      await this.userService.getCurrencyPreferencesForUser(user.id);
+
     // TODO(Jeremy): Add the sending currency too for display purposes.
     return {
       httpStatus: 200,
       data: {
+        senderCurrencies: senderCurrencies ?? [],
         receiverCurrencies: lnurlpResponse.currencies,
         minSendableSats: lnurlpResponse.minSendable,
         maxSendableSats: lnurlpResponse.maxSendable,
@@ -402,16 +408,21 @@ export default class SendingVasp {
       return { httpStatus: 500, data: "Error decoding invoice." };
     }
 
+    const senderCurrencies =
+      (await this.userService.getCurrencyPreferencesForUser(user.id)) ?? [];
+
     const newCallbackUuid = this.requestCache.savePayReqData(
       payerProfile.identifier,
       payResponse.pr,
       utxoCallback,
       invoice,
+      senderCurrencies,
     );
 
     return {
       httpStatus: 200,
       data: {
+        senderCurrencies: senderCurrencies ?? [],
         callbackUuid: newCallbackUuid,
         encodedInvoice: payResponse.pr,
         amount: invoice.amount,
@@ -475,6 +486,7 @@ export default class SendingVasp {
       encodedInvoice,
       "", // No utxo callback for non-UMA lnurl.
       invoice,
+      [],
     );
 
     return {

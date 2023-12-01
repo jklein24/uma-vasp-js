@@ -1,5 +1,5 @@
 import { InvoiceData } from "@lightsparkdev/lightspark-sdk";
-import { LnurlpResponse } from "@uma-sdk/core";
+import { Currency, LnurlpResponse } from "@uma-sdk/core";
 import { v4 as uuidv4 } from "uuid";
 import { NonUmaLnurlpResponse } from "./rawLnurl.js";
 
@@ -67,6 +67,7 @@ export default class SendingVaspRequestCache {
     encodedInvoice: string,
     utxoCallback: string,
     invoiceData: InvoiceData,
+    senderCurrencies: Currency[],
   ): string {
     const uuid = uuidv4();
     this.payReqCache.set(uuid, {
@@ -74,6 +75,7 @@ export default class SendingVaspRequestCache {
       encodedInvoice,
       utxoCallback,
       invoiceData,
+      senderCurrencies,
     });
     return uuid;
   }
@@ -97,4 +99,5 @@ export interface SendingVaspPayReqData {
   encodedInvoice: string;
   utxoCallback: string;
   invoiceData: InvoiceData;
+  senderCurrencies: Currency[];
 }
