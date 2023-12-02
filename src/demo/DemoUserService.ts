@@ -6,7 +6,7 @@ import UserService from "../UserService.js";
 // Static UUID so that callback URLs are always the same.
 const DEMO_UID = "4b41ae03-01b8-4974-8d26-26a35d28851b";
 
-export class DemoUserService implements UserService {
+export default class DemoUserService implements UserService {
   private usersById: Map<string, User>;
 
   constructor() {

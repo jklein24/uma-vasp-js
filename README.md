@@ -29,6 +29,7 @@ LIGHTSPARK_UMA_ENCRYPTION_PUBKEY=<encryption public key hex> \
 LIGHTSPARK_UMA_ENCRYPTION_PRIVKEY=<encryption private key hex> \
 LIGHTSPARK_UMA_SIGNING_PUBKEY=<signing public key hex> \
 LIGHTSPARK_UMA_SIGNING_PRIVKEY=<signing private key hex> \
+LIGHTSPARK_UMA_OSK_NODE_SIGNING_KEY_PASSWORD=<osk node signing key password> \
 npm run start
 ```
 
@@ -76,6 +77,16 @@ $ curl -X GET "http://localhost:8080/api/umapayreq/52ca86cd-62ed-4110-9774-4e07b
 curl -X POST http://localhost:8080/api/sendpayment/e26cbee9-f09d-4ada-a731-965cbd043d50
 ```
 
+## Configuring the server
+
+The server is configured via environment variables and takes several configurable interface implementations when it is constructed. See `src/startServer.ts` for an example of how to construct and start the server. You can create your own start script or modify the existing one to inject your own implementations of the following interfaces:
+
+- `PublicKeyCache`: A cache for other vasps' public keys retrieved via the UMA SDK. The default implementation uses an in-memory cache, but you can use a database or other cache if you need persistence.
+- `SendingVaspRequestCache`: A cache for storing the state of a payment request flows on the sending side. The default implementation uses an in-memory cache, but you should use a database or other cache for real persistence.
+- `UserService`: A service for looking up user information and preferences.
+- `InternalLedgerService`: A service for looking up and changing your own internal ledger information on a per-user basis. It is notified when payments start and complete.
+- `ComplianceService`: A service which handles compliance checks, risk assessment, and travel rule information.
+
 ## Building with Docker
 
 To build the docker image, run:
@@ -97,6 +108,7 @@ docker run \
 -e LIGHTSPARK_UMA_ENCRYPTION_PRIVKEY=<encryption_privkey> \
 -e LIGHTSPARK_UMA_SIGNING_PUBKEY=<signing_pubkey> \
 -e LIGHTSPARK_UMA_SIGNING_PRIVKEY=<signing_privkey> \
+-e LIGHTSPARK_UMA_OSK_NODE_SIGNING_KEY_PASSWORD=<osk_node_signing_key_password> \
 uma-vasp
 ```
 

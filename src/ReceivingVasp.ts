@@ -5,8 +5,8 @@ import {
   LightsparkNode,
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
-import ComplianceService from "./ComplianceService.js";
 import { Express } from "express";
+import ComplianceService from "./ComplianceService.js";
 import { errorMessage } from "./errors.js";
 import {
   fullUrlForRequest,
@@ -24,8 +24,9 @@ export default class ReceivingVasp {
     private readonly pubKeyCache: uma.PublicKeyCache,
     private readonly userService: UserService,
     private readonly complianceService: ComplianceService,
-    app: Express,
-  ) {
+  ) {}
+
+  registerRoutes(app: Express): void {
     app.get("/.well-known/lnurlp/:username", async (req, resp) => {
       const response = await this.handleLnrulpRequest(
         req.params.username,

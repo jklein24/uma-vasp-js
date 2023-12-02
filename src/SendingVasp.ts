@@ -28,20 +28,19 @@ import { User } from "./User.js";
 import UserService from "./UserService.js";
 
 export default class SendingVasp {
-  private readonly requestCache: SendingVaspRequestCache =
-    new SendingVaspRequestCache();
-
   constructor(
     private readonly config: UmaConfig,
     private readonly lightsparkClient: LightsparkClient,
     private readonly pubKeyCache: uma.PublicKeyCache,
+    private readonly requestCache: SendingVaspRequestCache,
     private readonly userService: UserService,
     private readonly ledgerService: InternalLedgerService,
     private readonly complianceService: ComplianceService,
-    app: Express,
-  ) {
+  ) {}
+
+  registerRoutes(app: Express) {
     app.get("/api/umalookup/:receiver", async (req: Request, resp) => {
-      const user = await userService.getCallingUserFromRequest(
+      const user = await this.userService.getCallingUserFromRequest(
         fullUrlForRequest(req),
         req.headers,
       );
@@ -60,7 +59,7 @@ export default class SendingVasp {
     });
 
     app.get("/api/umapayreq/:callbackUuid", async (req: Request, resp) => {
-      const user = await userService.getCallingUserFromRequest(
+      const user = await this.userService.getCallingUserFromRequest(
         fullUrlForRequest(req),
         req.headers,
       );
@@ -79,7 +78,7 @@ export default class SendingVasp {
     });
 
     app.get("/api/sendpayment/:callbackUuid", async (req, resp) => {
-      const user = await userService.getCallingUserFromRequest(
+      const user = await this.userService.getCallingUserFromRequest(
         fullUrlForRequest(req),
         req.headers,
       );
