@@ -2,6 +2,7 @@ import {
   LightsparkClient,
   PaymentDirection,
   PostTransactionData,
+  RiskRating,
 } from "@lightsparkdev/lightspark-sdk";
 import ComplianceService from "../ComplianceService.js";
 import UmaConfig from "../UmaConfig.js";
@@ -35,9 +36,14 @@ export default class DemoComplianceService implements ComplianceService {
     counterpartyNodeId: string | undefined,
     counterpartyUtxos: string[],
   ): Promise<boolean> {
-    // TODO(Jeremy): When the new lightspark-sdk is released, we can use the screenNode function here.
-    // const risk = await this.lightsparkClient.screenNode(this.config.complianceProvider, counterpartyNodeId);
-    // return risk !== RiskRating.HIGH_RISK;
+    if (this.config.complianceProvider && counterpartyNodeId) {
+      const risk = await this.lightsparkClient.screenNode(
+        this.config.complianceProvider,
+        counterpartyNodeId,
+      );
+      return risk !== RiskRating.HIGH_RISK;
+    }
+
     return true;
   }
 
@@ -47,8 +53,14 @@ export default class DemoComplianceService implements ComplianceService {
     paymentDirection: PaymentDirection,
     lastHopUtxosWithAmounts: PostTransactionData[],
   ): Promise<void> {
-    // TODO(Jeremy): When the new lightspark-sdk is released, we can use the registerPayment function here.
-    // await this.lightsparkClient.registerPayment(this.config.complianceProvider, paymentId, nodePubKey, paymentDirection);
+    if (this.config.complianceProvider && nodePubKey) {
+      await this.lightsparkClient.registerPayment(
+        this.config.complianceProvider,
+        paymentId,
+        nodePubKey,
+        paymentDirection,
+      );
+    }
   }
 
   async getTravelRuleInfoForTransaction(
