@@ -1,3 +1,5 @@
+import { ComplianceProvider } from "@lightsparkdev/lightspark-sdk";
+
 export default class UmaConfig {
   constructor(
     public readonly apiClientID: string,
@@ -10,9 +12,16 @@ export default class UmaConfig {
     public readonly clientBaseURL: string | undefined,
     public readonly oskSigningKeyPassword: string | undefined,
     public readonly remoteSigningMasterSeedHex: string | undefined,
+    public readonly complianceProvider: ComplianceProvider | undefined,
   ) {}
 
   static fromEnvironment(): UmaConfig {
+    const complianceProvider: ComplianceProvider | undefined =
+      process.env.LIGHTSPARK_UMA_COMPLIANCE_PROVIDER &&
+      process.env.LIGHTSPARK_UMA_COMPLIANCE_PROVIDER !== "" &&
+      /* @ts-ignore */
+      (ComplianceProvider[process.env.LIGHTSPARK_UMA_COMPLIANCE_PROVIDER] ??
+        ComplianceProvider.FUTURE_VALUE);
     return new UmaConfig(
       requireEnv("LIGHTSPARK_API_TOKEN_CLIENT_ID"),
       requireEnv("LIGHTSPARK_API_TOKEN_CLIENT_SECRET"),
@@ -24,6 +33,7 @@ export default class UmaConfig {
       process.env.LIGHTSPARK_EXAMPLE_BASE_URL,
       process.env.LIGHTSPARK_UMA_OSK_NODE_SIGNING_KEY_PASSWORD,
       process.env.LIGHTSPARK_UMA_REMOTE_SIGNING_NODE_MASTER_SEED,
+      complianceProvider,
     );
   }
 

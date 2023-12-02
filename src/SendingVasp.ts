@@ -6,21 +6,26 @@ import {
   InvoiceData,
   LightsparkClient,
   OutgoingPayment,
+  PaymentDirection,
   TransactionStatus,
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
+import ComplianceService from "./ComplianceService.js";
 import { Express, Request } from "express";
 import InternalLedgerService from "./InternalLedgerService.js";
-import { fullUrlForRequest, sendResponse } from "./networking/expressAdapters.js";
+import {
+  fullUrlForRequest,
+  sendResponse,
+} from "./networking/expressAdapters.js";
 import { HttpResponse } from "./networking/HttpResponse.js";
-import { User } from "./User.js";
-import UserService from "./UserService.js";
 import { NonUmaLnurlpResponseSchema } from "./rawLnurl.js";
 import SendingVaspRequestCache, {
   SendingVaspInitialRequestData,
   SendingVaspPayReqData,
 } from "./SendingVaspRequestCache.js";
 import UmaConfig from "./UmaConfig.js";
+import { User } from "./User.js";
+import UserService from "./UserService.js";
 
 export default class SendingVasp {
   private readonly requestCache: SendingVaspRequestCache =
@@ -32,6 +37,7 @@ export default class SendingVasp {
     private readonly pubKeyCache: uma.PublicKeyCache,
     private readonly userService: UserService,
     private readonly ledgerService: InternalLedgerService,
+    private readonly complianceService: ComplianceService,
     app: Express,
   ) {
     app.get("/api/umalookup/:receiver", async (req: Request, resp) => {
@@ -104,6 +110,19 @@ export default class SendingVasp {
     if (!receiverId || !receivingVaspDomain) {
       console.error(`Invalid receiver: ${receiverUmaAddress}`);
       return { httpStatus: 400, data: "Invalid receiver" };
+    }
+
+    if (
+      !this.complianceService.shouldAcceptTransactionToVasp(
+        receivingVaspDomain,
+        user.umaUserName,
+        receiverUmaAddress,
+      )
+    ) {
+      return {
+        httpStatus: 400,
+        data: `Transaction not allowed to ${receiverUmaAddress}.`,
+      };
     }
 
     const lnurlpRequestUrl = await uma.getSignedLnurlpRequestUrl({
@@ -303,17 +322,6 @@ export default class SendingVasp {
       return { httpStatus: 400, data: "Invalid amount" };
     }
 
-    const currencyAmountMillisats = {
-      originalValue: amount,
-      originalUnit: CurrencyUnit.MILLISATOSHI,
-      preferredCurrencyUnit: CurrencyUnit.MILLISATOSHI,
-      preferredCurrencyValueRounded: amount,
-      preferredCurrencyValueApprox: amount,
-    };
-    if (!this.checkInternalLedgerBalance(user.id, currencyAmountMillisats)) {
-      return { httpStatus: 400, data: "Insufficient balance." };
-    }
-
     if (!initialRequestData.lnurlpResponse) {
       if (!initialRequestData.nonUmaLnurlpResponse) {
         return { httpStatus: 400, data: "Invalid callbackUuid" };
@@ -325,11 +333,23 @@ export default class SendingVasp {
     if (!currencyCode || typeof currencyCode !== "string") {
       return { httpStatus: 400, data: "Missing currencyCode" };
     }
-    const currencyValid = initialRequestData.lnurlpResponse.currencies.some(
+    const selectedCurrency = initialRequestData.lnurlpResponse.currencies.find(
       (c) => c.code === currencyCode,
     );
-    if (!currencyValid) {
+    if (selectedCurrency === undefined) {
       return { httpStatus: 400, data: "Currency code not supported" };
+    }
+
+    const amountValueMillisats = selectedCurrency.multiplier * amount;
+    const currencyAmountMillisats = {
+      originalValue: amountValueMillisats,
+      originalUnit: CurrencyUnit.MILLISATOSHI,
+      preferredCurrencyUnit: CurrencyUnit.MILLISATOSHI,
+      preferredCurrencyValueRounded: amountValueMillisats,
+      preferredCurrencyValueApprox: amountValueMillisats,
+    };
+    if (!this.checkInternalLedgerBalance(user.id, currencyAmountMillisats)) {
+      return { httpStatus: 400, data: "Insufficient balance." };
     }
 
     let pubKeys = await this.fetchPubKeys(
@@ -346,8 +366,12 @@ export default class SendingVasp {
       initialRequestData.lnurlpResponse.payerData,
       hostNameWithPort(requestUrl),
     );
-    const trInfo =
-      '["message": "Here is some fake travel rule info. It is up to you to actually implement this if needed."]';
+    const trInfo = await this.complianceService.getTravelRuleInfoForTransaction(
+      user.id,
+      payerProfile.identifier,
+      `${initialRequestData.receiverId}@${initialRequestData.receivingVaspDomain}`,
+      amountValueMillisats,
+    );
     const node = await this.getLightsparkNode();
     const utxoCallback = this.getUtxoCallback(requestUrl, "1234abcd");
 
@@ -359,7 +383,7 @@ export default class SendingVasp {
         currencyCode,
         amount,
         payerIdentifier: payerProfile.identifier,
-        payerKycStatus: uma.KycStatus.Verified,
+        payerKycStatus: user.kycStatus,
         utxoCallback,
         trInfo,
         payerUtxos: node.umaPrescreeningUtxos,
@@ -398,7 +422,19 @@ export default class SendingVasp {
       return { httpStatus: 424, data: "Error parsing payreq response." };
     }
 
-    // This is where you'd pre-screen the UTXOs from payResponse.compliance.utxos.
+    const shouldTransact = await this.complianceService.preScreenTransaction(
+      payerProfile.identifier,
+      `${initialRequestData.receiverId}@${initialRequestData.receivingVaspDomain}`,
+      amountValueMillisats,
+      payResponse.compliance.nodePubKey,
+      payResponse.compliance.utxos,
+    );
+    if (!shouldTransact) {
+      return {
+        httpStatus: 424,
+        data: "Transaction not allowed due to risk rating.",
+      };
+    }
 
     let invoice: InvoiceData;
     try {
@@ -603,6 +639,14 @@ export default class SendingVasp {
     }
 
     await this.sendPostTransactionCallback(payment, payReqData);
+
+    const nodePubKey = (await this.getLightsparkNode()).publicKey;
+    await this.complianceService.registerTransactionMonitoring(
+      payment.id,
+      nodePubKey,
+      PaymentDirection.SENT,
+      payment.umaPostTransactionData ?? [],
+    );
 
     return {
       httpStatus: 200,

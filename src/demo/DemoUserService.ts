@@ -1,4 +1,4 @@
-import { Currency } from "@uma-sdk/core";
+import { Currency, KycStatus } from "@uma-sdk/core";
 import { requireEnv } from "../UmaConfig.js";
 import { User } from "../User.js";
 import UserService from "../UserService.js";
@@ -16,6 +16,7 @@ export class DemoUserService implements UserService {
       umaUserName: requireEnv("LIGHTSPARK_UMA_RECEIVER_USER"),
       emailAddress: process.env.LIGHTSPARK_UMA_RECEIVER_USER_EMAIL,
       name: process.env.LIGHTSPARK_UMA_RECEIVER_USER_NAME,
+      kycStatus: KycStatus.Verified,
     });
   }
 

@@ -4,13 +4,14 @@ import {
 } from "@lightsparkdev/lightspark-sdk";
 import { InMemoryPublicKeyCache } from "@uma-sdk/core";
 import bodyParser from "body-parser";
-import { DemoUserService } from "./demo/DemoUserService.js";
+import DemoComplianceService from "./demo/DemoComplianceService.js";
 import express from "express";
+import DemoInternalLedgerService from "./demo/DemoInternalLedgerService.js";
+import { DemoUserService } from "./demo/DemoUserService.js";
 import { errorMessage } from "./errors.js";
 import ReceivingVasp from "./ReceivingVasp.js";
 import SendingVasp from "./SendingVasp.js";
 import UmaConfig from "./UmaConfig.js";
-import DemoInternalLedgerService from "./demo/DemoInternalLedgerService.js";
 
 export const app = express();
 const config = UmaConfig.fromEnvironment();
@@ -28,7 +29,14 @@ const pubKeyCache = new InMemoryPublicKeyCache();
 const userService = new DemoUserService();
 
 // TO IMPLEMENT: Replace with real ledger implementation.
-const ledgerService = new DemoInternalLedgerService(config, userService, lightsparkClient);
+const ledgerService = new DemoInternalLedgerService(
+  config,
+  userService,
+  lightsparkClient,
+);
+
+// TO IMPLEMENT: Replace with real compliance implementation.
+const complianceService = new DemoComplianceService(config, lightsparkClient);
 
 const sendingVasp = new SendingVasp(
   config,
@@ -36,6 +44,7 @@ const sendingVasp = new SendingVasp(
   pubKeyCache,
   userService,
   ledgerService,
+  complianceService,
   app,
 );
 const receivingVasp = new ReceivingVasp(
@@ -43,6 +52,7 @@ const receivingVasp = new ReceivingVasp(
   lightsparkClient,
   pubKeyCache,
   userService,
+  complianceService,
   app,
 );
 

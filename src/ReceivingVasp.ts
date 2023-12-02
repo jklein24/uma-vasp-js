@@ -5,13 +5,17 @@ import {
   LightsparkNode,
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
+import ComplianceService from "./ComplianceService.js";
 import { Express } from "express";
-import { fullUrlForRequest, sendResponse } from "./networking/expressAdapters.js";
+import { errorMessage } from "./errors.js";
+import {
+  fullUrlForRequest,
+  sendResponse,
+} from "./networking/expressAdapters.js";
 import { HttpResponse } from "./networking/HttpResponse.js";
+import UmaConfig from "./UmaConfig.js";
 import { User } from "./User.js";
 import UserService from "./UserService.js";
-import { errorMessage } from "./errors.js";
-import UmaConfig from "./UmaConfig.js";
 
 export default class ReceivingVasp {
   constructor(
@@ -19,6 +23,7 @@ export default class ReceivingVasp {
     private readonly lightsparkClient: LightsparkClient,
     private readonly pubKeyCache: uma.PublicKeyCache,
     private readonly userService: UserService,
+    private readonly complianceService: ComplianceService,
     app: Express,
   ) {
     app.get("/.well-known/lnurlp/:username", async (req, resp) => {
@@ -99,6 +104,18 @@ export default class ReceivingVasp {
       };
     }
 
+    if (
+      !this.complianceService.shouldAcceptTransactionFromVasp(
+        umaQuery.vaspDomain,
+        umaQuery.receiverAddress,
+      )
+    ) {
+      return {
+        httpStatus: 403,
+        data: "This user is not allowed to transact with this VASP.",
+      };
+    }
+
     let pubKeys: uma.PubKeyResponse;
     try {
       pubKeys = await uma.fetchPublicKeyForVasp({
@@ -150,7 +167,7 @@ export default class ReceivingVasp {
         minSendableSats: 1000,
         maxSendableSats: 10000000,
         privateKeyBytes: this.config.umaSigningPrivKey(),
-        receiverKycStatus: uma.KycStatus.Verified,
+        receiverKycStatus: user.kycStatus,
         payerDataOptions: {
           identifier: { mandatory: true },
           name: { mandatory: false },
@@ -236,6 +253,24 @@ export default class ReceivingVasp {
       };
     }
 
+    // TODO(Jeremy): Move this to the currency service.
+    const receiverFeesMillisats = 0;
+    const amountMsats =
+      payreq.amount * currency.multiplier + receiverFeesMillisats;
+    const shouldTransact = await this.complianceService.preScreenTransaction(
+      payreq.payerData.identifier,
+      user.id,
+      amountMsats,
+      payreq.payerData.compliance.nodePubKey,
+      payreq.payerData.compliance.utxos ?? [],
+    );
+    if (!shouldTransact) {
+      return {
+        httpStatus: 403,
+        data: "This transaction is too risky.",
+      };
+    }
+
     // 3 minutes invoice expiration to avoid big fluctuations in exchange rate.
     const expirationTimeSec = 60 * 3;
     // In a real implementation, this would be the txId for your own internal
@@ -262,7 +297,7 @@ export default class ReceivingVasp {
         metadata: this.getEncodedMetadata(requestUrl, user),
         query: payreq,
         receiverChannelUtxos: [],
-        receiverFeesMillisats: 0,
+        receiverFeesMillisats: receiverFeesMillisats,
         receiverNodePubKey: await this.getReceiverNodePubKey(),
         utxoCallback: this.getUtxoCallback(requestUrl, txId),
       });
