@@ -28,10 +28,12 @@ export default class DemoInternalLedgerService
     userId: string,
     recivingUmaAddress: string,
     amountMsats: number,
+    amountSendingCurrency: number,
+    sendingCurrencyCode: string,
     lightsparkTransactionId: string,
   ): Promise<void> {
     console.log(
-      `[LEDGER] Recording sent transaction for ${userId} to ${recivingUmaAddress} for ${amountMsats} msats`,
+      `[LEDGER] Recording sent transaction for ${userId} to ${recivingUmaAddress} for ${amountMsats} msats (${amountSendingCurrency} ${sendingCurrencyCode})`,
     );
     const pendingTxMap =
       this.pendingOutgoingTransactionsByUserId.get(userId) || new Map();
@@ -46,15 +48,19 @@ export default class DemoInternalLedgerService
     userId: string,
     receivingUmaAddress: string,
     amountMsats: number,
+    amountSendingCurrency: number,
+    sendingCurrencyCode: string,
     lightsparkTransactionId: string,
   ): Promise<void> {
     console.log(
-      `[LEDGER] Recording successful outgoing transaction for ${userId} to ${receivingUmaAddress} for ${amountMsats} msats`,
+      `[LEDGER] Recording successful outgoing transaction for ${userId} to ${receivingUmaAddress} for ${amountMsats} msats (${amountSendingCurrency} ${sendingCurrencyCode})`,
     );
     this.removePendingOutgoingTransaction(
       userId,
       receivingUmaAddress,
       amountMsats,
+      amountSendingCurrency,
+      sendingCurrencyCode,
       lightsparkTransactionId,
     );
   }
@@ -63,15 +69,19 @@ export default class DemoInternalLedgerService
     userId: string,
     receivingUmaAddress: string,
     amountMsats: number,
+    amountSendingCurrency: number,
+    sendingCurrencyCode: string,
     lightsparkTransactionId: string,
   ): Promise<void> {
     console.log(
-      `[LEDGER] Recording failed outgoing transaction for ${userId} to ${receivingUmaAddress} for ${amountMsats} msats`,
+      `[LEDGER] Recording failed outgoing transaction for ${userId} to ${receivingUmaAddress} for ${amountMsats} msats (${amountSendingCurrency} ${sendingCurrencyCode})`,
     );
     this.removePendingOutgoingTransaction(
       userId,
       receivingUmaAddress,
       amountMsats,
+      amountSendingCurrency,
+      sendingCurrencyCode,
       lightsparkTransactionId,
     );
   }
@@ -80,10 +90,12 @@ export default class DemoInternalLedgerService
     userId: string,
     sendingUmaAddress: string,
     amountMsats: number,
+    amountSendingCurrency: number,
+    sendingCurrencyCode: string,
     lightsparkTransactionId: string,
   ): Promise<void> {
     console.log(
-      `[LEDGER] Recording received transaction for ${userId} from ${sendingUmaAddress} for ${amountMsats} msats`,
+      `[LEDGER] Recording received transaction for ${userId} from ${sendingUmaAddress} for ${amountMsats} msats (${amountSendingCurrency} ${sendingCurrencyCode})}`,
     );
     // no-op for demo. Real implementations would record the transaction in a database.
   }
@@ -98,7 +110,7 @@ export default class DemoInternalLedgerService
     // no-op for demo. Real implementations would record the transaction in a database.
   }
 
-  async getUserBalanceMsats(userId: string): Promise<number> {
+  async getUserBalance(userId: string, currencyCode: string): Promise<number> {
     if (this.userService.getUserById(userId) === undefined) {
       return 0;
     }
@@ -125,12 +137,14 @@ export default class DemoInternalLedgerService
     userId: string,
     receivingUmaAddress: string,
     amountMsats: number,
+    amountSendingCurrency: number,
+    sendingCurrencyCode: string,
     lightsparkTransactionId: string,
   ): void {
     const pendingTxMap = this.pendingOutgoingTransactionsByUserId.get(userId);
     if (!pendingTxMap) {
       console.warn(
-        `[LEDGER] No pending outgoing transactions for ${userId} to ${receivingUmaAddress} for ${amountMsats} msats`,
+        `[LEDGER] No pending outgoing transactions for ${userId} to ${receivingUmaAddress} for ${amountMsats} msats (${amountSendingCurrency} ${sendingCurrencyCode}).`,
       );
       return;
     }

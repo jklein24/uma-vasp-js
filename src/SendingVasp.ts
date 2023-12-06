@@ -1,6 +1,5 @@
 import { convertCurrencyAmount, hexToBytes } from "@lightsparkdev/core";
 import {
-  CurrencyAmount,
   CurrencyUnit,
   getLightsparkNodeQuery,
   InvoiceData,
@@ -10,8 +9,8 @@ import {
   TransactionStatus,
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
-import ComplianceService from "./ComplianceService.js";
 import { Express, Request } from "express";
+import ComplianceService from "./ComplianceService.js";
 import InternalLedgerService from "./InternalLedgerService.js";
 import {
   fullUrlForRequest,
@@ -91,6 +90,7 @@ export default class SendingVasp {
       const response = await this.handleClientSendPayment(
         user,
         req.params.callbackUuid,
+        fullUrlForRequest(req),
       );
       sendResponse(resp, response);
     });
@@ -328,26 +328,37 @@ export default class SendingVasp {
       return await this.handleNonUmaPayReq(initialRequestData, amount);
     }
 
-    const currencyCode = requestUrl.searchParams.get("currencyCode");
-    if (!currencyCode || typeof currencyCode !== "string") {
+    const recievingCurrencyCode = requestUrl.searchParams.get("currencyCode");
+    if (!recievingCurrencyCode || typeof recievingCurrencyCode !== "string") {
       return { httpStatus: 400, data: "Missing currencyCode" };
     }
     const selectedCurrency = initialRequestData.lnurlpResponse.currencies.find(
-      (c) => c.code === currencyCode,
+      (c) => c.code === recievingCurrencyCode,
     );
     if (selectedCurrency === undefined) {
       return { httpStatus: 400, data: "Currency code not supported" };
     }
 
     const amountValueMillisats = selectedCurrency.multiplier * amount;
-    const currencyAmountMillisats = {
-      originalValue: amountValueMillisats,
-      originalUnit: CurrencyUnit.MILLISATOSHI,
-      preferredCurrencyUnit: CurrencyUnit.MILLISATOSHI,
-      preferredCurrencyValueRounded: amountValueMillisats,
-      preferredCurrencyValueApprox: amountValueMillisats,
-    };
-    if (!this.checkInternalLedgerBalance(user.id, currencyAmountMillisats)) {
+    const sendingCurrencyCode =
+      requestUrl.searchParams.get("sendingCurrency") ?? "SAT";
+    const sendingCurrency = (
+      await this.userService.getCurrencyPreferencesForUser(user.id)
+    )?.find((c) => c.code === sendingCurrencyCode);
+    if (sendingCurrency === undefined) {
+      return { httpStatus: 400, data: "Sending currency code not supported" };
+    }
+    const sendingCurrencyAmount =
+      amountValueMillisats / sendingCurrency.multiplier;
+
+    if (
+      !this.checkInternalLedgerBalance(
+        user.id,
+        amountValueMillisats,
+        sendingCurrencyAmount,
+        sendingCurrencyCode,
+      )
+    ) {
       return { httpStatus: 400, data: "Insufficient balance." };
     }
 
@@ -379,7 +390,7 @@ export default class SendingVasp {
       payReq = await uma.getPayRequest({
         receiverEncryptionPubKey: hexToBytes(pubKeys.encryptionPubKey),
         sendingVaspPrivateKey: this.config.umaSigningPrivKey(),
-        currencyCode,
+        currencyCode: recievingCurrencyCode,
         amount,
         payerIdentifier: payerProfile.identifier,
         payerKycStatus: user.kycStatus,
@@ -563,6 +574,7 @@ export default class SendingVasp {
   private async handleClientSendPayment(
     user: User,
     callbackUuid: string,
+    requestUrl: URL,
   ): Promise<HttpResponse> {
     if (!callbackUuid || callbackUuid === "") {
       return { httpStatus: 400, data: "Missing callbackUuid" };
@@ -584,16 +596,44 @@ export default class SendingVasp {
       };
     }
 
-    if (
-      !this.checkInternalLedgerBalance(user.id, payReqData.invoiceData.amount)
-    ) {
-      return { httpStatus: 400, data: "Insufficient balance." };
+    const sendingCurrencyCode =
+      requestUrl.searchParams.get("sendingCurrency") ?? "SAT";
+    const sendingCurrency = (
+      await this.userService.getCurrencyPreferencesForUser(user.id)
+    )?.find((c) => c.code === sendingCurrencyCode);
+    if (sendingCurrency === undefined) {
+      return { httpStatus: 400, data: "Sending currency code not supported" };
     }
 
     const amountMsats = convertCurrencyAmount(
       payReqData.invoiceData.amount,
       CurrencyUnit.MILLISATOSHI,
     ).preferredCurrencyValueRounded;
+
+    const sendingCurrencyAmount = amountMsats / sendingCurrency.multiplier;
+    if (sendingCurrencyAmount < sendingCurrency.minSendable) {
+      return {
+        httpStatus: 400,
+        data: `Invalid invoice amount. Minimum amount is ${sendingCurrency.minSendable} ${sendingCurrency.code}.`,
+      };
+    }
+    if (sendingCurrencyAmount > sendingCurrency.maxSendable) {
+      return {
+        httpStatus: 400,
+        data: `Invalid invoice amount. Maximum amount is ${sendingCurrency.maxSendable} ${sendingCurrency.code}.`,
+      };
+    }
+
+    if (
+      !this.checkInternalLedgerBalance(
+        user.id,
+        amountMsats,
+        sendingCurrencyAmount,
+        sendingCurrencyCode,
+      )
+    ) {
+      return { httpStatus: 400, data: "Insufficient balance." };
+    }
 
     let payment: OutgoingPayment;
     let paymentId: string | undefined = undefined;
@@ -615,6 +655,8 @@ export default class SendingVasp {
         user.id,
         payReqData.receiverUmaAddress,
         amountMsats,
+        sendingCurrencyAmount,
+        sendingCurrency.code,
         paymentId,
       );
       payment = await this.waitForPaymentCompletion(paymentResult);
@@ -622,6 +664,8 @@ export default class SendingVasp {
         user.id,
         payReqData.receiverUmaAddress,
         amountMsats,
+        sendingCurrencyAmount,
+        sendingCurrency.code,
         paymentId,
       );
     } catch (e) {
@@ -631,6 +675,8 @@ export default class SendingVasp {
           user.id,
           payReqData.receiverUmaAddress,
           amountMsats,
+          sendingCurrencyAmount,
+          sendingCurrency.code,
           paymentId,
         );
       }
@@ -658,14 +704,15 @@ export default class SendingVasp {
 
   private async checkInternalLedgerBalance(
     userId: string,
-    amount: CurrencyAmount,
+    amountMsats: number,
+    sendingCurrencyAmount: number,
+    sendingCurrencyCode: string,
   ): Promise<boolean> {
-    const balanceMsats = await this.ledgerService.getUserBalanceMsats(userId);
-    const amountMsats = convertCurrencyAmount(
-      amount,
-      CurrencyUnit.MILLISATOSHI,
-    ).preferredCurrencyValueRounded;
-    return balanceMsats >= amountMsats;
+    const balanceMsats = await this.ledgerService.getUserBalance(
+      userId,
+      sendingCurrencyCode,
+    );
+    return balanceMsats >= sendingCurrencyAmount;
   }
 
   /**
