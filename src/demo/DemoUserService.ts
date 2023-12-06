@@ -51,7 +51,7 @@ export default class DemoUserService implements UserService {
         maxSendable: 10_000_000_000,
         minSendable: 1,
         multiplier: 1000,
-        displayDecimals: 0,
+        decimals: 0,
       },
     ];
   }
