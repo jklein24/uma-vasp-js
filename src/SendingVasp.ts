@@ -316,7 +316,7 @@ export default class SendingVasp {
     if (!amountStr || typeof amountStr !== "string") {
       return { httpStatus: 400, data: "Missing amount" };
     }
-    const amount = parseInt(amountStr);
+    const amount = parseFloat(amountStr);
     if (isNaN(amount)) {
       return { httpStatus: 400, data: "Invalid amount" };
     }
@@ -406,6 +406,7 @@ export default class SendingVasp {
       return { httpStatus: 500, data: "Error generating payreq." };
     }
 
+    console.log(`Sending payreq: ${JSON.stringify(payReq, null, 2)}`);
     let response: globalThis.Response;
     try {
       response = await fetch(initialRequestData.lnurlpResponse.callback, {
