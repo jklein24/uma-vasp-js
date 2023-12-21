@@ -76,7 +76,7 @@ export default class SendingVasp {
       sendResponse(resp, response);
     });
 
-    app.get("/api/sendpayment/:callbackUuid", async (req, resp) => {
+    app.post("/api/sendpayment/:callbackUuid", async (req, resp) => {
       const user = await this.userService.getCallingUserFromRequest(
         fullUrlForRequest(req),
         req.headers,
@@ -215,7 +215,6 @@ export default class SendingVasp {
     const senderCurrencies =
       await this.userService.getCurrencyPreferencesForUser(user.id);
 
-    // TODO(Jeremy): Add the sending currency too for display purposes.
     return {
       httpStatus: 200,
       data: {
