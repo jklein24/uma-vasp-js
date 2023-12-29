@@ -46,7 +46,7 @@ export default class SendingVasp {
       if (!user) {
         return sendResponse(resp, {
           httpStatus: 401,
-          data: "Unauthorized",
+          data: "Unauthorized. Check your credentials.",
         });
       }
       const response = await this.handleClientUmaLookup(
@@ -65,7 +65,7 @@ export default class SendingVasp {
       if (!user) {
         return sendResponse(resp, {
           httpStatus: 401,
-          data: "Unauthorized",
+          data: "Unauthorized. Check your credentials.",
         });
       }
       const response = await this.handleClientUmaPayreq(
@@ -84,7 +84,7 @@ export default class SendingVasp {
       if (!user) {
         return sendResponse(resp, {
           httpStatus: 401,
-          data: "Unauthorized",
+          data: "Unauthorized. Check your credentials.",
         });
       }
       const response = await this.handleClientSendPayment(
