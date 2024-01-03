@@ -3,6 +3,7 @@ import { InMemoryPublicKeyCache } from "@uma-sdk/core";
 import bodyParser from "body-parser";
 import ComplianceService from "ComplianceService.js";
 import express from "express";
+import NonceValidator from "NonceValidator.js";
 import { errorMessage } from "./errors.js";
 import InternalLedgerService from "./InternalLedgerService.js";
 import ReceivingVasp from "./ReceivingVasp.js";
@@ -19,6 +20,7 @@ export const createUmaServer = (
   userService: UserService,
   ledgerService: InternalLedgerService,
   complianceService: ComplianceService,
+  nonceValidator: NonceValidator,
 ): {
   listen: (port: number, onStarted: () => void) => void;
 } => {
@@ -34,6 +36,7 @@ export const createUmaServer = (
     userService,
     ledgerService,
     complianceService,
+    nonceValidator,
   );
   sendingVasp.registerRoutes(app);
   const receivingVasp = new ReceivingVasp(
@@ -42,6 +45,7 @@ export const createUmaServer = (
     pubKeyCache,
     userService,
     complianceService,
+    nonceValidator,
   );
   receivingVasp.registerRoutes(app);
 
