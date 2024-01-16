@@ -3,7 +3,7 @@ import { InMemoryPublicKeyCache } from "@uma-sdk/core";
 import bodyParser from "body-parser";
 import ComplianceService from "ComplianceService.js";
 import express from "express";
-import NonceValidator from "NonceValidator.js";
+import NonceValidator from "./NonceValidator.js";
 import { errorMessage } from "./errors.js";
 import InternalLedgerService from "./InternalLedgerService.js";
 import ReceivingVasp from "./ReceivingVasp.js";

@@ -10,7 +10,7 @@ import {
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
 import { Express, Request } from "express";
-import NonceValidator from "NonceValidator.js";
+import NonceValidator from "./NonceValidator.js";
 import ComplianceService from "./ComplianceService.js";
 import InternalLedgerService from "./InternalLedgerService.js";
 import {
@@ -433,16 +433,17 @@ export default class SendingVasp {
       return { httpStatus: 500, data: "Error sending payreq." };
     }
 
-    if (!response.ok) {
-      console.log(await response.text());
+    if (!response.ok || response.status !== 200) {
       return { httpStatus: 424, data: `Payreq failed. ${response.status}` };
     }
 
     let payResponse: uma.PayReqResponse;
+    const bodyText = await response.text();
     try {
-      payResponse = await uma.parsePayReqResponse(await response.text());
+      payResponse = await uma.parsePayReqResponse(bodyText);
     } catch (e) {
-      console.error("Error parsing payreq response.", e);
+      console.error("Error parsing payreq response. Raw response: " + bodyText);
+      console.error("Error:", e);
       return { httpStatus: 424, data: "Error parsing payreq response." };
     }
 

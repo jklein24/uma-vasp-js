@@ -3,7 +3,7 @@ import {
   LightsparkClient,
 } from "@lightsparkdev/lightspark-sdk";
 import { InMemoryPublicKeyCache } from "@uma-sdk/core";
-import InMemoryNonceValidator from "demo/InMemoryNonceValidator.js";
+import InMemoryNonceValidator from "./demo/InMemoryNonceValidator.js";
 import DemoComplianceService from "./demo/DemoComplianceService.js";
 import DemoInternalLedgerService from "./demo/DemoInternalLedgerService.js";
 import DemoUserService from "./demo/DemoUserService.js";

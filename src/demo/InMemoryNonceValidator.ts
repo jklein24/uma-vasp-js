@@ -1,4 +1,4 @@
-import NonceValidator from "NonceValidator.js";
+import NonceValidator from "../NonceValidator.js";
 
 /**
  * A simple in-memory nonce validator which caches seen nonce values and rejects any which have been seen before
