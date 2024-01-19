@@ -11,6 +11,7 @@ import ComplianceService from "./ComplianceService.js";
 import { errorMessage } from "./errors.js";
 import {
   fullUrlForRequest,
+  isDomainLocalhost,
   sendResponse,
 } from "./networking/expressAdapters.js";
 import { HttpResponse } from "./networking/HttpResponse.js";
@@ -412,9 +413,7 @@ export default class ReceivingVasp {
   }
 
   private getLnurlpCallback(fullUrl: URL, isUma: boolean, user: User): string {
-    const protocol = fullUrl.hostname.startsWith("localhost")
-      ? "http"
-      : "https";
+    const protocol = isDomainLocalhost(fullUrl.hostname) ? "http" : "https";
     const port = fullUrl.port;
     const portString =
       port === "80" || port === "443" || port === "" ? "" : `:${port}`;
