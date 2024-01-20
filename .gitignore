@@ -17,6 +17,7 @@ node_modules/*
 
 # Users Environment Variables
 .lock-wscript
+local.env
 
 # Eclipse projects
 .project

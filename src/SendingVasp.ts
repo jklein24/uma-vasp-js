@@ -10,7 +10,6 @@ import {
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
 import { Express, Request } from "express";
-import NonceValidator from "./NonceValidator.js";
 import ComplianceService from "./ComplianceService.js";
 import InternalLedgerService from "./InternalLedgerService.js";
 import {
@@ -18,6 +17,7 @@ import {
   sendResponse,
 } from "./networking/expressAdapters.js";
 import { HttpResponse } from "./networking/HttpResponse.js";
+import NonceValidator from "./NonceValidator.js";
 import { NonUmaLnurlpResponseSchema } from "./rawLnurl.js";
 import SendingVaspRequestCache, {
   SendingVaspInitialRequestData,
@@ -130,7 +130,7 @@ export default class SendingVasp {
       isSubjectToTravelRule: true,
       receiverAddress: receiverUmaAddress,
       signingPrivateKey: this.config.umaSigningPrivKey(),
-      senderVaspDomain: hostNameWithPort(requestUrl),
+      senderVaspDomain: this.getSendingVaspDomain(requestUrl),
     });
 
     console.log(`Making lnurlp request: ${lnurlpRequestUrl}`);
@@ -171,6 +171,7 @@ export default class SendingVasp {
     try {
       lnurlpResponse = uma.parseLnurlpResponse(responseJson);
     } catch (e) {
+      console.error("Couldn't parse as uma. Trying raw lnurl.", e);
       const response = await this.handleAsNonUmaLnurlpResponse(
         responseJson,
         receiverId,
@@ -257,7 +258,7 @@ export default class SendingVasp {
       isSubjectToTravelRule: true,
       receiverAddress: receiver,
       signingPrivateKey: this.config.umaSigningPrivKey(),
-      senderVaspDomain: hostNameWithPort(requestUrl),
+      senderVaspDomain: this.getSendingVaspDomain(requestUrl),
       umaVersionOverride: newSupportedVersion,
     });
     return fetch(retryRequest);
@@ -387,7 +388,7 @@ export default class SendingVasp {
     const payerProfile = this.getPayerProfile(
       user,
       initialRequestData.lnurlpResponse.payerData,
-      hostNameWithPort(requestUrl),
+      this.getSendingVaspDomain(requestUrl),
     );
     const trInfo = await this.complianceService.getTravelRuleInfoForTransaction(
       user.id,
@@ -852,6 +853,14 @@ export default class SendingVasp {
       masterSeed: remoteSigningMasterSeed,
       network: node.bitcoinNetwork,
     });
+  }
+
+  private getSendingVaspDomain(requestUrl: URL): string {
+    const configVaspDomain = this.config.sendingVaspDomain;
+    if (configVaspDomain) {
+      return configVaspDomain;
+    }
+    return hostNameWithPort(requestUrl);
   }
 }
 
