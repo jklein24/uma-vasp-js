@@ -6,7 +6,6 @@ import {
 } from "@lightsparkdev/lightspark-sdk";
 import * as uma from "@uma-sdk/core";
 import { Express } from "express";
-import NonceValidator from "NonceValidator.js";
 import ComplianceService from "./ComplianceService.js";
 import { errorMessage } from "./errors.js";
 import {
@@ -26,7 +25,7 @@ export default class ReceivingVasp {
     private readonly pubKeyCache: uma.PublicKeyCache,
     private readonly userService: UserService,
     private readonly complianceService: ComplianceService,
-    private readonly nonceValidator: NonceValidator,
+    private readonly nonceValidator: uma.NonceValidator,
   ) {}
 
   registerRoutes(app: Express): void {
@@ -138,6 +137,7 @@ export default class ReceivingVasp {
       const isSignatureValid = await uma.verifyUmaLnurlpQuerySignature(
         umaQuery,
         hexToBytes(pubKeys.signingPubKey),
+        this.nonceValidator,
       );
       if (!isSignatureValid) {
         return {
@@ -149,18 +149,6 @@ export default class ReceivingVasp {
       return {
         httpStatus: 500,
         data: new Error("Invalid UMA query signature.", { cause: e }),
-      };
-    }
-
-    if (
-      !this.nonceValidator.checkAndSaveNonce(
-        umaQuery.nonce,
-        umaQuery.timestamp.getTime() / 1000,
-      )
-    ) {
-      return {
-        httpStatus: 424,
-        data: "Invalid response nonce. Already seen this nonce or the timestamp is too old.",
       };
     }
 
@@ -249,6 +237,7 @@ export default class ReceivingVasp {
       const isSignatureValid = await uma.verifyPayReqSignature(
         payreq,
         hexToBytes(pubKeys.signingPubKey),
+        this.nonceValidator,
       );
       if (!isSignatureValid) {
         return { httpStatus: 400, data: "Invalid payreq signature." };
@@ -258,18 +247,6 @@ export default class ReceivingVasp {
       return {
         httpStatus: 500,
         data: new Error("Invalid payreq signature.", { cause: e }),
-      };
-    }
-
-    if (
-      !this.nonceValidator.checkAndSaveNonce(
-        payreq.payerData.compliance.signatureNonce,
-        payreq.payerData.compliance.signatureTimestamp,
-      )
-    ) {
-      return {
-        httpStatus: 424,
-        data: "Invalid response nonce. Already seen this nonce or the timestamp is too old.",
       };
     }
 

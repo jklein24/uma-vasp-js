@@ -2,8 +2,7 @@ import {
   AccountTokenAuthProvider,
   LightsparkClient,
 } from "@lightsparkdev/lightspark-sdk";
-import { InMemoryPublicKeyCache } from "@uma-sdk/core";
-import InMemoryNonceValidator from "./demo/InMemoryNonceValidator.js";
+import { InMemoryNonceValidator, InMemoryPublicKeyCache } from "@uma-sdk/core";
 import DemoComplianceService from "./demo/DemoComplianceService.js";
 import DemoInternalLedgerService from "./demo/DemoInternalLedgerService.js";
 import DemoUserService from "./demo/DemoUserService.js";
