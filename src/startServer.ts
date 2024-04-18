@@ -2,13 +2,13 @@ import {
   AccountTokenAuthProvider,
   LightsparkClient,
 } from "@lightsparkdev/lightspark-sdk";
-import { InMemoryNonceValidator, InMemoryPublicKeyCache } from "@uma-sdk/core";
+import { InMemoryPublicKeyCache, InMemoryNonceValidator } from "@uma-sdk/core";
+import UmaConfig from "./UmaConfig.js";
 import DemoComplianceService from "./demo/DemoComplianceService.js";
 import DemoInternalLedgerService from "./demo/DemoInternalLedgerService.js";
 import DemoUserService from "./demo/DemoUserService.js";
 import InMemorySendingVaspRequestCache from "./demo/InMemorySendingVaspRequestCache.js";
 import { createUmaServer } from "./server.js";
-import UmaConfig from "./UmaConfig.js";
 
 // In a real implementation, you'd replace the demo implementations of all of the services with your
 // own when constructing the server.
@@ -18,8 +18,9 @@ const lightsparkClient = new LightsparkClient(
   config.clientBaseURL,
 );
 const userService = new DemoUserService();
-const oneWeekAgo = Date.now() - 1000 * 60 * 60 * 24 * 7;
 
+const twoDaysAgo = new Date();
+twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 const umaServer = createUmaServer(
   config,
   lightsparkClient,
@@ -28,7 +29,7 @@ const umaServer = createUmaServer(
   userService,
   new DemoInternalLedgerService(config, userService, lightsparkClient),
   new DemoComplianceService(config, lightsparkClient),
-  new InMemoryNonceValidator(oneWeekAgo),
+  new InMemoryNonceValidator(twoDaysAgo.getTime()),
 );
 
 let port = 8080;

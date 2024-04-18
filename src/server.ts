@@ -1,15 +1,23 @@
 import { LightsparkClient } from "@lightsparkdev/lightspark-sdk";
-import { InMemoryPublicKeyCache, NonceValidator } from "@uma-sdk/core";
+import {
+  fetchPublicKeyForVasp,
+  getPubKeyResponse,
+  parsePostTransactionCallback,
+  verifyPostTransactionCallbackSignature,
+  InMemoryPublicKeyCache,
+  PubKeyResponse,
+  NonceValidator
+} from "@uma-sdk/core";
 import bodyParser from "body-parser";
-import ComplianceService from "ComplianceService.js";
 import express from "express";
-import { errorMessage } from "./errors.js";
+import ComplianceService from "./ComplianceService.js";
 import InternalLedgerService from "./InternalLedgerService.js";
 import ReceivingVasp from "./ReceivingVasp.js";
 import SendingVasp from "./SendingVasp.js";
 import SendingVaspRequestCache from "./SendingVaspRequestCache.js";
 import UmaConfig from "./UmaConfig.js";
 import UserService from "./UserService.js";
+import { errorMessage } from "./errors.js";
 
 export const createUmaServer = (
   config: UmaConfig,
@@ -19,9 +27,14 @@ export const createUmaServer = (
   userService: UserService,
   ledgerService: InternalLedgerService,
   complianceService: ComplianceService,
-  nonceValidator: NonceValidator,
+  nonceCache: NonceValidator,
 ): {
-  listen: (port: number, onStarted: () => void) => void;
+  listen: (
+    port: number,
+    onStarted: () => void,
+  ) => {
+    close: (callback?: ((err?: Error | undefined) => void) | undefined) => void;
+  };
 } => {
   const app = express();
 
@@ -35,7 +48,7 @@ export const createUmaServer = (
     userService,
     ledgerService,
     complianceService,
-    nonceValidator,
+    nonceCache,
   );
   sendingVasp.registerRoutes(app);
   const receivingVasp = new ReceivingVasp(
@@ -44,21 +57,53 @@ export const createUmaServer = (
     pubKeyCache,
     userService,
     complianceService,
-    nonceValidator,
+    nonceCache,
   );
   receivingVasp.registerRoutes(app);
 
   app.get("/.well-known/lnurlpubkey", (req, res) => {
-    res.send({
-      signingPubKey: config.umaSigningPubKeyHex,
-      encryptionPubKey: config.umaEncryptionPubKeyHex,
-    });
+    res.send(getPubKeyResponse({
+      signingCertChainPem: config.umaSigningCertChain,
+      encryptionCertChainPem: config.umaEncryptionCertChain,
+    }).toJsonString());
   });
 
-  app.post("/api/uma/utxoCallback", (req, res) => {
+  app.post("/api/uma/utxoCallback", async (req, res) => {
+    const postTransactionCallback = parsePostTransactionCallback(req.body);
+
+    let pubKeys: PubKeyResponse;
+    try {
+      pubKeys = await fetchPublicKeyForVasp({
+        cache: pubKeyCache,
+        vaspDomain: postTransactionCallback.vaspDomain,
+      });
+    } catch (e) {
+      console.error(e);
+      return {
+        httpStatus: 500,
+        data: new Error("Failed to fetch public key.", { cause: e }),
+      };
+    }
+
+    console.log(`Fetched pubkeys: ${JSON.stringify(pubKeys, null, 2)}`);
+
+    try {
+      const isSignatureValid = await verifyPostTransactionCallbackSignature(postTransactionCallback, pubKeys, nonceCache);
+      if (!isSignatureValid) {
+        return { httpStatus: 400, data: "Invalid post transaction callback signature." };
+      }
+    } catch (e) {
+      console.error(e);
+      return {
+        httpStatus: 500,
+        data: new Error("Invalid post transaction callback signature.", { cause: e }),
+      };
+    }
+
     console.log(`Received UTXO callback for ${req.query.txid}`);
     console.log(`  ${req.body}`);
     res.send("ok");
+    return { httpStatus: 200, data: "ok" };
   });
 
   // Default 404 handler.

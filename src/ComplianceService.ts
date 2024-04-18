@@ -1,4 +1,5 @@
 import {
+  ComplianceProvider,
   PaymentDirection,
   PostTransactionData,
 } from "@lightsparkdev/lightspark-sdk";
