@@ -2,13 +2,13 @@ import {
   AccountTokenAuthProvider,
   LightsparkClient,
 } from "@lightsparkdev/lightspark-sdk";
-import { InMemoryPublicKeyCache, InMemoryNonceValidator } from "@uma-sdk/core";
-import UmaConfig from "./UmaConfig.js";
+import { InMemoryNonceValidator, InMemoryPublicKeyCache } from "@uma-sdk/core";
 import DemoComplianceService from "./demo/DemoComplianceService.js";
 import DemoInternalLedgerService from "./demo/DemoInternalLedgerService.js";
 import DemoUserService from "./demo/DemoUserService.js";
 import InMemorySendingVaspRequestCache from "./demo/InMemorySendingVaspRequestCache.js";
 import { createUmaServer } from "./server.js";
+import UmaConfig from "./UmaConfig.js";
 
 // In a real implementation, you'd replace the demo implementations of all of the services with your
 // own when constructing the server.
@@ -36,6 +36,8 @@ let port = 8080;
 if (process.env.PORT) {
   port = parseInt(process.env.PORT);
 }
-umaServer.listen(port, () => {
-  console.log(`Server started on port ${port}`);
+umaServer.then((server) => {
+  server.listen(port, () => {
+    console.log(`Server started on port ${port}`);
+  });
 });

@@ -1,25 +1,28 @@
+import { createUnauthenticatedClient } from "@interledger/open-payments";
 import { LightsparkClient } from "@lightsparkdev/lightspark-sdk";
 import {
   fetchPublicKeyForVasp,
   getPubKeyResponse,
-  parsePostTransactionCallback,
-  verifyPostTransactionCallbackSignature,
   InMemoryPublicKeyCache,
+  NonceValidator,
+  parsePostTransactionCallback,
   PubKeyResponse,
-  NonceValidator
+  verifyPostTransactionCallbackSignature,
 } from "@uma-sdk/core";
 import bodyParser from "body-parser";
 import express from "express";
+import AuthService from "openpayments/AuthService.js";
+import ClientAppHelper from "openpayments/ClientAppHelper.js";
 import ComplianceService from "./ComplianceService.js";
+import { errorMessage } from "./errors.js";
 import InternalLedgerService from "./InternalLedgerService.js";
 import ReceivingVasp from "./ReceivingVasp.js";
 import SendingVasp from "./SendingVasp.js";
 import SendingVaspRequestCache from "./SendingVaspRequestCache.js";
 import UmaConfig from "./UmaConfig.js";
 import UserService from "./UserService.js";
-import { errorMessage } from "./errors.js";
 
-export const createUmaServer = (
+export const createUmaServer = async (
   config: UmaConfig,
   lightsparkClient: LightsparkClient,
   pubKeyCache: InMemoryPublicKeyCache,
@@ -28,14 +31,14 @@ export const createUmaServer = (
   ledgerService: InternalLedgerService,
   complianceService: ComplianceService,
   nonceCache: NonceValidator,
-): {
+): Promise<{
   listen: (
     port: number,
     onStarted: () => void,
   ) => {
     close: (callback?: ((err?: Error | undefined) => void) | undefined) => void;
   };
-} => {
+}> => {
   const app = express();
 
   app.use(bodyParser.text({ type: "*/*" })); // Middleware to parse raw body
@@ -61,11 +64,18 @@ export const createUmaServer = (
   );
   receivingVasp.registerRoutes(app);
 
+  const client = await createUnauthenticatedClient({});
+  const clientHelper = new ClientAppHelper(client);
+  const authService = new AuthService(userService, clientHelper);
+  await authService.registerRoutes(app);
+
   app.get("/.well-known/lnurlpubkey", (req, res) => {
-    res.send(getPubKeyResponse({
-      signingCertChainPem: config.umaSigningCertChain,
-      encryptionCertChainPem: config.umaEncryptionCertChain,
-    }).toJsonString());
+    res.send(
+      getPubKeyResponse({
+        signingCertChainPem: config.umaSigningCertChain,
+        encryptionCertChainPem: config.umaEncryptionCertChain,
+      }).toJsonString(),
+    );
   });
 
   app.post("/api/uma/utxoCallback", async (req, res) => {
@@ -88,15 +98,24 @@ export const createUmaServer = (
     console.log(`Fetched pubkeys: ${JSON.stringify(pubKeys, null, 2)}`);
 
     try {
-      const isSignatureValid = await verifyPostTransactionCallbackSignature(postTransactionCallback, pubKeys, nonceCache);
+      const isSignatureValid = await verifyPostTransactionCallbackSignature(
+        postTransactionCallback,
+        pubKeys,
+        nonceCache,
+      );
       if (!isSignatureValid) {
-        return { httpStatus: 400, data: "Invalid post transaction callback signature." };
+        return {
+          httpStatus: 400,
+          data: "Invalid post transaction callback signature.",
+        };
       }
     } catch (e) {
       console.error(e);
       return {
         httpStatus: 500,
-        data: new Error("Invalid post transaction callback signature.", { cause: e }),
+        data: new Error("Invalid post transaction callback signature.", {
+          cause: e,
+        }),
       };
     }
 
