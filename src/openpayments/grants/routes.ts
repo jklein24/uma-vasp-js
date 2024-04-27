@@ -89,7 +89,7 @@ async function createApprovedGrant(
       "internal server error",
     );
   }
-  const access = await deps.accessService.getByGrant(grant.id);
+  const access = grant.access;
   res.status(200);
   res.json(
     toOpenPaymentsGrant(

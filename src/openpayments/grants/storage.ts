@@ -1,5 +1,6 @@
 import {
   AccessItem,
+  AccessToken,
   Grant as OpenPaymentsGrant,
   GrantContinuation as OpenPaymentsGrantContinuation,
   PendingGrant as OpenPaymentsPendingGrant,
@@ -19,7 +20,6 @@ export type GrantModel = {
   updatedAt: Date;
   access: AccessItem[];
   startMethod: StartMethod[];
-  identifier: string;
 
   continueToken: string;
   continueId: string;
@@ -93,12 +93,9 @@ export function toOpenPaymentsGrant(
   grant: GrantModel,
   args: ToOpenPaymentsGrantArgs,
   accessToken: AccessToken,
-  accessItems: Access[],
 ): OpenPaymentsGrant {
   return {
-    access_token: toOpenPaymentsAccessToken(accessToken, accessItems, {
-      authServerUrl: args.authServerUrl,
-    }),
+    access_token: accessToken.access_token,
     continue: {
       access_token: {
         value: grant.continueToken,
@@ -134,6 +131,10 @@ export function isRevokedGrant(grant: GrantModel): boolean {
 export interface GrantStorage {
   upsertGrant(grant: GrantModel): Promise<GrantModel>;
   getGrant(grantId: string): Promise<GrantModel | undefined>;
-  getGrantByContinueId(continueId: string): Promise<GrantModel | undefined>;
+  getGrantByContinue(
+    continueId: string,
+    continueToken: string,
+    includeRevoked: boolean,
+  ): Promise<GrantModel | undefined>;
   deleteGrant(grantId: string): Promise<void>;
 }

@@ -1,22 +1,25 @@
-import { AccessAction, AccessType } from "@interledger/open-payments";
+import { AccessAction, AccessItem, AccessType } from "@interledger/open-payments";
+import { AccessIncomingActions, AccessOutgoingActions, AccessQuoteActions } from "@interledger/open-payments/dist/types.js";
 
 interface BaseAccessRequest {
-  actions: AccessAction[];
   identifier?: string;
 }
 
 export interface IncomingPaymentRequest extends BaseAccessRequest {
   type: "incoming-payment";
+  actions: AccessIncomingActions;
   limits?: never;
 }
 
 export interface OutgoingPaymentRequest extends BaseAccessRequest {
   type: "outgoing-payment";
+  actions: AccessOutgoingActions;
   limits?: OutgoingPaymentLimit;
 }
 
 export interface QuoteRequest extends BaseAccessRequest {
   type: "quote";
+  actions: AccessQuoteActions;
   limits?: never;
 }
 
@@ -35,22 +38,20 @@ export function isAction(actions: AccessAction[]): actions is AccessAction[] {
 }
 
 export function isIncomingPaymentAccessRequest(
-  accessRequest: AccessRequest,
+  accessRequest: AccessItem,
 ): accessRequest is IncomingPaymentRequest {
   return (
     accessRequest.type === AccessType.IncomingPayment &&
-    isAction(accessRequest.actions) &&
-    !accessRequest.limits
+    isAction(accessRequest.actions)
   );
 }
 
 export function isQuoteAccessRequest(
-  accessRequest: AccessRequest,
+  accessRequest: AccessItem,
 ): accessRequest is QuoteRequest {
   return (
     accessRequest.type === AccessType.Quote &&
-    isAction(accessRequest.actions) &&
-    !accessRequest.limits
+    isAction(accessRequest.actions)
   );
 }
 

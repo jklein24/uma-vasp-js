@@ -1,12 +1,7 @@
-import { Grant } from "@interledger/open-payments";
+import { generateToken } from "openpayments/cryptoUtils.js";
 import { v4 } from "uuid";
 import { GrantModel, GrantStorage } from "./storage.js";
-import {
-  GrantFilter,
-  GrantFinalization,
-  GrantRequest,
-  GrantState,
-} from "./types.js";
+import { GrantFinalization, GrantRequest, GrantState } from "./types.js";
 import { canSkipInteraction } from "./utils.js";
 
 export interface GrantService {
@@ -22,7 +17,6 @@ export interface GrantService {
   ): Promise<GrantModel | undefined>;
   revokeGrant(grantId: string): Promise<boolean>;
   updateLastContinuedAt(id: string): Promise<GrantModel>;
-  lock(grantId: string, timeoutMs?: number): Promise<void>;
 }
 
 interface ServiceDependencies {
@@ -38,16 +32,15 @@ export async function createGrantService({
     create: (grantRequest: GrantRequest) => create(deps, grantRequest),
     markPending: (grantId: string) => markPending(deps, grantId),
     approve: (grantId: string) => approve(deps, grantId),
-    finalize: (id: string, reason: GrantFinalization) => finalize(id, reason),
+    finalize: (id: string, reason: GrantFinalization) =>
+      finalize(deps, id, reason),
     getByContinue: (
       continueId: string,
       continueToken: string,
       opts: GetByContinueOpts,
-    ) => getByContinue(continueId, continueToken, opts),
+    ) => getByContinue(deps, continueId, continueToken, opts),
     revokeGrant: (grantId) => revokeGrant(deps, grantId),
-    updateLastContinuedAt: (id) => updateLastContinuedAt(id),
-    lock: (grantId: string, timeoutMs?: number) =>
-      lock(deps, grantId, timeoutMs),
+    updateLastContinuedAt: (id) => updateLastContinuedAt(deps, id),
   };
 }
 
@@ -144,14 +137,10 @@ async function create(
     continueId: v4(),
     continueToken: generateToken(),
     lastContinuedAt: new Date(),
-    access: [],
-    identifier: access[0].identifier ?? "",
+    access,
   };
 
   const grant = await storage.upsertGrant(grantData);
-
-  // Associate provided accesses with grant
-  // await accessService.createAccess(grant.id, access, grantTrx);
 
   return grant;
 }
@@ -161,83 +150,30 @@ interface GetByContinueOpts {
 }
 
 async function getByContinue(
+  deps: ServiceDependencies,
   continueId: string,
   continueToken: string,
   options: GetByContinueOpts = {},
 ): Promise<GrantModel | undefined> {
   const { includeRevoked = false } = options;
 
-  const queryBuilder = Grant.query()
-    .findOne({ continueId, continueToken })
-    .withGraphFetched("interaction");
-
-  if (!includeRevoked) {
-    queryBuilder.andWhere((queryBuilder) => {
-      queryBuilder.whereNull("finalizationReason");
-      queryBuilder.orWhereNot("finalizationReason", GrantFinalization.Revoked);
-    });
-  }
-
-  const grant = await queryBuilder;
-
-  return grant;
+  return await deps.storage.getGrantByContinue(
+    continueId,
+    continueToken,
+    includeRevoked,
+  );
 }
 
-async function getGrantsPage(
-  deps: ServiceDependencies,
-  pagination?: Pagination,
-  filter?: GrantFilter,
-  sortOrder?: SortOrder,
-): Promise<Grant[]> {
-  const query = Grant.query(deps.knex).withGraphJoined("access");
-  const { identifier, state, finalizationReason } = filter ?? {};
-
-  if (identifier?.in?.length) {
-    query.whereIn("access.identifier", identifier.in);
+async function updateLastContinuedAt(
+  { storage }: ServiceDependencies,
+  grantId: string,
+): Promise<GrantModel> {
+  const grant = await storage.getGrant(grantId);
+  if (!grant) {
+    throw new Error(`Grant not found for grantId: ${grantId}`);
   }
-
-  if (state?.in?.length) {
-    query.whereIn("state", state.in);
-  }
-
-  if (state?.notIn?.length) {
-    query.whereNotIn("state", state.notIn);
-  }
-
-  if (finalizationReason?.in?.length) {
-    query.whereIn("finalizationReason", finalizationReason.in);
-  }
-
-  if (finalizationReason?.notIn?.length) {
-    query
-      .whereNull("finalizationReason")
-      .orWhereNotIn("finalizationReason", finalizationReason.notIn);
-  }
-
-  return query.getPage(pagination, sortOrder);
-}
-
-async function updateLastContinuedAt(id: string): Promise<Grant> {
-  return Grant.query().patchAndFetchById(id, {
+  return await storage.upsertGrant({
+    ...grant,
     lastContinuedAt: new Date(),
   });
-}
-
-async function lock(
-  deps: ServiceDependencies,
-  grantId: string,
-  trx: Transaction,
-  timeoutMs?: number,
-): Promise<void> {
-  const grants = await trx<Grant>(Grant.tableName)
-    .select()
-    .where("id", grantId)
-    .forNoKeyUpdate()
-    .timeout(timeoutMs ?? 5000);
-
-  if (grants.length <= 0) {
-    deps.logger.warn(
-      `No grant found when attempting to lock grantId: ${grantId}`,
-    );
-  }
 }

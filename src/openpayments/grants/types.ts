@@ -1,9 +1,9 @@
-import { AccessRequest } from "../accessTypes.js";
+import { AccessItem } from "@interledger/open-payments";
 
 // datatracker.ietf.org/doc/html/draft-ietf-gnap-core-protocol#section-2
 export interface GrantRequest {
   access_token: {
-    access: AccessRequest[];
+    access: AccessItem[];
   };
   client: string;
   interact?: {
