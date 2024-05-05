@@ -5,7 +5,12 @@ import { Express } from "express";
 import { fullUrlForRequest } from "networking/expressAdapters.js";
 import { User } from "User.js";
 import UserService from "UserService.js";
+import { createAccessTokenService } from "./accesstoken/service.js";
+import { InMemoryAccessTokenStorage } from "./accesstoken/storage.js";
 import ClientAppHelper from "./ClientAppHelper.js";
+import { createGrantRoutes } from "./grants/routes.js";
+import { createGrantService } from "./grants/service.js";
+import { InMemoryGrantStorage } from "./grants/storage.js";
 import {
   createValidatorMiddleware,
   grantInitiationHttpsigMiddleware,
@@ -28,6 +33,21 @@ export default class AuthService {
 
       resp.json(await this.getWalletAddress(user, fullUrlForRequest(req)));
     });
+
+    const grantService = await createGrantService({
+      storage: InMemoryGrantStorage.getInstance(),
+    });
+    const accessTokenService = await createAccessTokenService({
+      clientService: this.clientHelper,
+      accessTokenExpirySeconds: 60 * 60 * 24 * 7, // 1 week
+      tokenStorage: InMemoryAccessTokenStorage.getInstance(),
+      grantStorage: InMemoryGrantStorage.getInstance(),
+    });
+    const grantRoutes = createGrantRoutes({
+      grantService,
+      clientService: this.clientHelper,
+      accessTokenService,
+    });
     const openApiSpec = await getAuthServerOpenAPI();
     const validator = createValidatorMiddleware(openApiSpec, {
       path: "/",
@@ -37,9 +57,7 @@ export default class AuthService {
       "/op/auth/grant",
       validator,
       grantInitiationHttpsigMiddleware.bind(this, this.clientHelper),
-      async (req, resp) => {
-        // TODO
-      },
+      grantRoutes.create,
     );
 
     app.get("/op/resource", async (req, resp) => {

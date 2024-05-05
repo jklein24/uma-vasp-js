@@ -1,10 +1,11 @@
 import {
   AccessItem,
-  AccessToken,
   Grant as OpenPaymentsGrant,
   GrantContinuation as OpenPaymentsGrantContinuation,
   PendingGrant as OpenPaymentsPendingGrant,
 } from "@interledger/open-payments";
+import { toOpenPaymentsAccessToken } from "openpayments/accesstoken/service.js";
+import { AccessTokenModel } from "openpayments/accesstoken/storage.js";
 import {
   FinishMethod,
   GrantFinalization,
@@ -92,10 +93,12 @@ export function toOpenPaymentsGrantContinuation(
 export function toOpenPaymentsGrant(
   grant: GrantModel,
   args: ToOpenPaymentsGrantArgs,
-  accessToken: AccessToken,
+  accessToken: AccessTokenModel,
 ): OpenPaymentsGrant {
   return {
-    access_token: accessToken.access_token,
+    access_token: toOpenPaymentsAccessToken(accessToken, grant.access, {
+      authServerUrl: args.authServerUrl,
+    }),
     continue: {
       access_token: {
         value: grant.continueToken,
@@ -137,4 +140,46 @@ export interface GrantStorage {
     includeRevoked: boolean,
   ): Promise<GrantModel | undefined>;
   deleteGrant(grantId: string): Promise<void>;
+}
+
+export class InMemoryGrantStorage implements GrantStorage {
+  private grants: Record<string, GrantModel> = {};
+  private grantsByContinue: Record<string, GrantModel> = {};
+  private static instance: InMemoryGrantStorage;
+
+  private constructor() {}
+
+  static getInstance(): InMemoryGrantStorage {
+    if (!InMemoryGrantStorage.instance) {
+      InMemoryGrantStorage.instance = new InMemoryGrantStorage();
+    }
+    return InMemoryGrantStorage.instance;
+  }
+
+  async upsertGrant(grant: GrantModel): Promise<GrantModel> {
+    this.grants[grant.id] = grant;
+    this.grantsByContinue[grant.continueId] = grant;
+    return grant;
+  }
+
+  async getGrant(grantId: string): Promise<GrantModel | undefined> {
+    return this.grants[grantId];
+  }
+
+  async getGrantByContinue(
+    continueId: string,
+    continueToken: string,
+    includeRevoked: boolean,
+  ): Promise<GrantModel | undefined> {
+    const grant = this.grantsByContinue[continueId];
+    if (!grant || grant.continueToken !== continueToken) return undefined;
+    if (!includeRevoked && isRevokedGrant(grant)) return undefined;
+    return grant;
+  }
+
+  async deleteGrant(grantId: string): Promise<void> {
+    const grant = this.grants[grantId];
+    delete this.grants[grantId];
+    delete this.grantsByContinue[grant.continueId];
+  }
 }

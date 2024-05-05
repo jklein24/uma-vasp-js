@@ -12,12 +12,13 @@ import {
 } from "./storage.js";
 import { GrantFinalization, GrantState } from "./types.js";
 import { canSkipInteraction } from "./utils.js";
+import { AccessTokenService } from "openpayments/accesstoken/service.js";
+import { AccessTokenModel } from "openpayments/accesstoken/storage.js";
 
 interface ServiceDependencies {
   grantService: GrantService;
   clientService: ClientAppHelper;
-  // accessTokenService: AccessTokenService
-  // accessService: AccessService
+  accessTokenService: AccessTokenService
   // interactionService: InteractionService
   // config: IAppConfig
 }
@@ -28,14 +29,7 @@ export interface GrantRoutes {
   revoke(req: Request, res: Response): Promise<void>;
 }
 
-export function createGrantRoutes({
-  grantService,
-  clientService,
-}: ServiceDependencies): GrantRoutes {
-  const deps = {
-    grantService,
-    clientService,
-  };
+export function createGrantRoutes(deps: ServiceDependencies): GrantRoutes {
   return {
     create: (req: Request, res: Response) => createGrant(deps, req, res),
     continue: (req: Request, res: Response) => continueGrant(deps, req, res),
@@ -74,11 +68,10 @@ async function createApprovedGrant(
   const { body } = req;
   const { grantService } = deps;
   let grant: GrantModel;
-  // let accessToken: AccessToken
+  let accessToken: AccessTokenModel;
   try {
     grant = await grantService.create(body);
-    // TODO: Save access token
-    // accessToken = await deps.accessTokenService.create(grant.id, trx)
+    accessToken = await deps.accessTokenService.create(grant.id)
     // await trx.commit()
   } catch (err) {
     // await trx.rollback()
@@ -96,7 +89,6 @@ async function createApprovedGrant(
       grant,
       { authServerUrl: config.authServerDomain },
       accessToken,
-      access,
     ),
   );
 }
@@ -185,7 +177,7 @@ async function pollGrantContinuation(
   continueId: string,
   continueToken: string,
 ): Promise<void> {
-  const { config, grantService, accessService, accessTokenService } = deps;
+  const { config, grantService, accessTokenService } = deps;
 
   const grant = await grantService.getByContinue(continueId, continueToken);
   if (!grant) {
@@ -236,7 +228,6 @@ async function pollGrantContinuation(
     );
   } else {
     const accessToken = await accessTokenService.create(grant.id);
-    const access = await accessService.getByGrant(grant.id);
     await grantService.finalize(grant.id, GrantFinalization.Issued);
     res.status(200).send(
       toOpenPaymentsGrant(
@@ -245,7 +236,6 @@ async function pollGrantContinuation(
           authServerUrl: config.authServerDomain,
         },
         accessToken,
-        access,
       ),
     );
     return;
@@ -277,11 +267,8 @@ async function continueGrant(
   }
 
   const {
-    config,
     accessTokenService,
     grantService,
-    accessService,
-    interactionService,
   } = deps;
 
   if (!req.body || Object.keys(req.body).length === 0) {
@@ -332,7 +319,6 @@ async function continueGrant(
     }
 
     const accessToken = await accessTokenService.create(grant.id);
-    const access = await accessService.getByGrant(grant.id);
     await grantService.finalize(grant.id, GrantFinalization.Issued);
 
     // TODO: add "continue" to response if additional grant request steps are added
@@ -341,7 +327,6 @@ async function continueGrant(
         interaction.grant,
         { authServerUrl: config.authServerDomain },
         accessToken,
-        access,
       ),
     );
   }
