@@ -15,6 +15,7 @@ export interface OutgoingPaymentRequest extends BaseAccessRequest {
   type: "outgoing-payment";
   actions: AccessOutgoingActions;
   limits?: OutgoingPaymentLimit;
+  identifier: string;
 }
 
 export interface QuoteRequest extends BaseAccessRequest {
@@ -41,8 +42,18 @@ export function isIncomingPaymentAccessRequest(
   accessRequest: AccessItem,
 ): accessRequest is IncomingPaymentRequest {
   return (
-    accessRequest.type === AccessType.IncomingPayment &&
+    accessRequest.type === "incoming-payment" &&
     isAction(accessRequest.actions)
+  );
+}
+
+export function isOutgoingPaymentAccessRequest(
+  accessRequest: AccessItem,
+): accessRequest is OutgoingPaymentRequest {
+  return (
+    accessRequest.type === "outgoing-payment" &&
+    isAction(accessRequest.actions) &&
+    !!accessRequest.identifier
   );
 }
 

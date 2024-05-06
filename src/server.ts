@@ -66,7 +66,7 @@ export const createUmaServer = async (
 
   const client = await createUnauthenticatedClient({});
   const clientHelper = new ClientAppHelper(client);
-  const authService = new AuthService(userService, clientHelper);
+  const authService = new AuthService(userService, clientHelper, config);
   await authService.registerRoutes(app);
 
   app.get("/.well-known/lnurlpubkey", (req, res) => {

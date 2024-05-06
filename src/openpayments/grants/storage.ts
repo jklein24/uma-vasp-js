@@ -12,6 +12,7 @@ import {
   GrantState,
   StartMethod,
 } from "./types.js";
+import { InteractionModel } from "openpayments/interaction/storage.js";
 
 export type GrantModel = {
   id: string;
@@ -43,7 +44,7 @@ interface ToOpenPaymentsPendingGrantArgs {
 
 export function toOpenPaymentPendingGrant(
   grant: GrantModel,
-  interaction: Interaction,
+  interaction: InteractionModel,
   args: ToOpenPaymentsPendingGrantArgs,
 ): OpenPaymentsPendingGrant {
   const { authServerUrl, client, waitTimeSeconds } = args;

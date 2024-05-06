@@ -1,5 +1,10 @@
 import { Request, Response } from "express";
+import { fullUrlForRequest } from "networking/expressAdapters.js";
+import { AccessTokenService } from "openpayments/accesstoken/service.js";
+import { AccessTokenModel } from "openpayments/accesstoken/storage.js";
 import ClientAppHelper from "openpayments/ClientAppHelper.js";
+import { InteractionService } from "openpayments/interaction/service.js";
+import UmaConfig from "UmaConfig.js";
 import { GNAPErrorCode, throwGNAPError } from "../gnapErrors.js";
 import { GrantService } from "./service.js";
 import {
@@ -12,16 +17,16 @@ import {
 } from "./storage.js";
 import { GrantFinalization, GrantState } from "./types.js";
 import { canSkipInteraction } from "./utils.js";
-import { AccessTokenService } from "openpayments/accesstoken/service.js";
-import { AccessTokenModel } from "openpayments/accesstoken/storage.js";
 
 interface ServiceDependencies {
   grantService: GrantService;
   clientService: ClientAppHelper;
-  accessTokenService: AccessTokenService
-  // interactionService: InteractionService
-  // config: IAppConfig
+  accessTokenService: AccessTokenService;
+  interactionService: InteractionService;
+  config: UmaConfig;
 }
+
+const CONTINUATION_WAIT_TIME_SECONDS = 300;
 
 export interface GrantRoutes {
   create(req: Request, res: Response): Promise<void>;
@@ -66,12 +71,12 @@ async function createApprovedGrant(
   res: Response,
 ): Promise<void> {
   const { body } = req;
-  const { grantService } = deps;
+  const { grantService, config } = deps;
   let grant: GrantModel;
   let accessToken: AccessTokenModel;
   try {
     grant = await grantService.create(body);
-    accessToken = await deps.accessTokenService.create(grant.id)
+    accessToken = await deps.accessTokenService.create(grant.id);
     // await trx.commit()
   } catch (err) {
     // await trx.rollback()
@@ -82,12 +87,11 @@ async function createApprovedGrant(
       "internal server error",
     );
   }
-  const access = grant.access;
   res.status(200);
   res.json(
     toOpenPaymentsGrant(
       grant,
-      { authServerUrl: config.authServerDomain },
+      { authServerUrl: getAuthServiceUrl(config, req) },
       accessToken,
     ),
   );
@@ -99,7 +103,7 @@ async function createPendingGrant(
   res: Response,
 ): Promise<void> {
   const { body } = req;
-  const { grantService } = deps;
+  const { grantService, interactionService, config } = deps;
   if (!body.interact) {
     throwGNAPError(
       res,
@@ -121,16 +125,15 @@ async function createPendingGrant(
 
   try {
     const grant = await grantService.create(body);
-    // TODO: Save the interaction
-    // const interaction = await interactionService.create(grant.id)
+    const interaction = await interactionService.create(grant.id);
     // await trx.commit()
 
     res.status(200);
     res.send(
       toOpenPaymentPendingGrant(grant, interaction, {
         client,
-        authServerUrl: config.authServerDomain,
-        waitTimeSeconds: config.waitTimeSeconds,
+        authServerUrl: getAuthServiceUrl(config, req),
+        waitTimeSeconds: CONTINUATION_WAIT_TIME_SECONDS,
       }),
     );
   } catch (err) {
@@ -184,7 +187,7 @@ async function pollGrantContinuation(
     throwGNAPError(res, 404, GNAPErrorCode.InvalidRequest, "grant not found");
   }
 
-  if (isGrantStillWaiting(grant, config.waitTimeSeconds)) {
+  if (isGrantStillWaiting(grant, CONTINUATION_WAIT_TIME_SECONDS)) {
     throwGNAPError(
       res,
       400,
@@ -211,8 +214,8 @@ async function pollGrantContinuation(
     await grantService.updateLastContinuedAt(grant.id);
     res.status(200).json(
       toOpenPaymentsGrantContinuation(grant, {
-        authServerUrl: config.authServerDomain,
-        waitTimeSeconds: config.waitTimeSeconds,
+        authServerUrl: getAuthServiceUrl(config, req),
+        waitTimeSeconds: CONTINUATION_WAIT_TIME_SECONDS,
       }),
     );
     return;
@@ -233,7 +236,7 @@ async function pollGrantContinuation(
       toOpenPaymentsGrant(
         grant,
         {
-          authServerUrl: config.authServerDomain,
+          authServerUrl: getAuthServiceUrl(config, req),
         },
         accessToken,
       ),
@@ -266,10 +269,7 @@ async function continueGrant(
     );
   }
 
-  const {
-    accessTokenService,
-    grantService,
-  } = deps;
+  const { accessTokenService, interactionService, grantService, config } = deps;
 
   if (!req.body || Object.keys(req.body).length === 0) {
     await pollGrantContinuation(deps, req, res, continueId, continueToken);
@@ -300,7 +300,9 @@ async function continueGrant(
       GNAPErrorCode.InvalidContinuation,
       "grant not found",
     );
-  } else if (isGrantStillWaiting(interaction.grant, config.waitTimeSeconds)) {
+  } else if (
+    isGrantStillWaiting(interaction.grant, CONTINUATION_WAIT_TIME_SECONDS)
+  ) {
     throwGNAPError(
       res,
       400,
@@ -325,7 +327,7 @@ async function continueGrant(
     res.json(
       toOpenPaymentsGrant(
         interaction.grant,
-        { authServerUrl: config.authServerDomain },
+        { authServerUrl: getAuthServiceUrl(config, req) },
         accessToken,
       ),
     );
@@ -362,4 +364,8 @@ async function revokeGrant(
     throwGNAPError(res, 404, GNAPErrorCode.InvalidRequest, "invalid grant");
   }
   res.status(204).send();
+}
+
+function getAuthServiceUrl(config: UmaConfig, req: Request): string {
+  return config.getSendingVaspDomain(fullUrlForRequest(req));
 }

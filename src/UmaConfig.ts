@@ -1,4 +1,5 @@
 import { ComplianceProvider } from "@lightsparkdev/lightspark-sdk";
+import { hostNameWithPort } from "networking/expressAdapters.js";
 
 export default class UmaConfig {
   constructor(
@@ -64,6 +65,14 @@ export default class UmaConfig {
       this.remoteSigningMasterSeedHex.length > 0
       ? Buffer.from(this.remoteSigningMasterSeedHex, "hex")
       : undefined;
+  }
+
+  getSendingVaspDomain(requestUrl: URL): string {
+    const configVaspDomain = this.sendingVaspDomain;
+    if (configVaspDomain) {
+      return configVaspDomain;
+    }
+    return hostNameWithPort(requestUrl);
   }
 }
 

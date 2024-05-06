@@ -16,6 +16,7 @@ import {
 import { NextFunction, Request, RequestHandler, Response } from "express";
 import ClientAppHelper from "./ClientAppHelper.js";
 import { GNAPErrorCode, throwGNAPError } from "./gnapErrors.js";
+import { GrantService } from "./grants/service.js";
 
 interface ValidationOptions {
   validateRequest?: boolean;
@@ -116,6 +117,7 @@ async function verifySigFromClient(
 
 export async function grantContinueHttpsigMiddleware(
   clientHelper: ClientAppHelper,
+  grantService: GrantService,
   request: Request,
   response: Response,
   next: NextFunction,
@@ -149,7 +151,6 @@ export async function grantContinueHttpsigMiddleware(
     "httpsig for continue",
   );
 
-  const grantService = await ctx.container.use("grantService");
   const grant = await grantService.getByContinue(
     request.params["id"],
     continueToken,
